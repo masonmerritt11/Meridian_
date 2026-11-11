@@ -35,6 +35,7 @@ DEFAULT_RISK_CONFIG: dict[str, Any] = {
     "max_spread_bps": "25",
     "volatility_restrict_atr_pct": {"METAL": "1.0", "ENERGY": "1.5", "CRYPTO": "2.5"},
     "volatility_block_atr_pct": {"METAL": "2.0", "ENERGY": "3.0", "CRYPTO": "5.0"},
+    "max_positions_per_asset": 1,          # account too small to stack positions in one asset
     "margin_per_contract": {},             # USD per contract by asset, entered by the CIO from the broker
     "recommendation_ttl_hours": 12,
 }
@@ -144,6 +145,13 @@ def evaluate(inp: RiskInputs) -> RiskResult:
         add("STOP", "BLOCK", "INVALID_STOP", "stop on wrong side of entry")
     if inp.contract_size is None or inp.contract_size <= 0:
         add("CONTRACT", "BLOCK", "CONTRACT_SIZE_MISSING", "contract size unknown")
+
+    held = sum(1 for p in inp.open_positions if p.asset == inp.asset)
+    if held >= int(cfg["max_positions_per_asset"]):
+        add("ASSET_CONCENTRATION", "BLOCK", "ASSET_POSITION_LIMIT",
+            f"{held} open {inp.asset} position(s); limit {cfg['max_positions_per_asset']} per asset")
+    else:
+        add("ASSET_CONCENTRATION", "ALLOW", "ASSET_NOT_HELD", f"no open {inp.asset} position")
 
     blocked_essential = any(c.outcome == "BLOCK" for c in checks)
     qty: Decimal | None = None

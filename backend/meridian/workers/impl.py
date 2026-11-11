@@ -60,6 +60,10 @@ class InstrumentDiscoveryWorker(BaseWorker):
         specs = provider.discover()
         rows = md.upsert_instruments(s, specs, now)
         rc.ref("provider", provider.source)
+        for r in rows:
+            self.log.info(f"discovery {r.asset}: {r.id} status={r.status} type={r.product_type} "
+                          f"contract_size={r.contract_size} tick={r.price_increment} expiry={r.contract_expiry} "
+                          f"{r.status_detail}")
         act = [r.id for r in rows if r.status == "ACTIVE"]
         un = [f"{r.asset}:{r.id}:{r.status_detail}" for r in rows if r.status != "ACTIVE"]
         rc.metrics.update({"active": len(act), "unavailable": len(un)})
@@ -102,6 +106,7 @@ class MarketIngestWorker(BaseWorker):
                 sp.commit()
             except ProviderUnavailable as e:
                 sp.rollback()
+                self.log.warning(f"market data unavailable for {inst.id}: {e}")
                 md.set_freshness(s, f"candles:{inst.id}:{gran}", prev_last, "UNAVAILABLE", inst.source, str(e)[:300], now)
                 failed.append(inst.id)
                 continue
@@ -151,6 +156,7 @@ class MacroCalendarWorker(BaseWorker):
         try:
             events = provider.fetch()
         except Exception as e:  # noqa: BLE001 — record explicit unavailable state, keep old events
+            self.log.warning(f"macro calendar fetch failed: {e!r}")
             prev = s.get(md.DataFreshness, "macro_calendar")
             stale_after = timedelta(hours=int(rc.config["stale_after_hours"]))
             status = "STALE" if prev and prev.last_data_ts and now - prev.last_data_ts < stale_after * 4 else "UNAVAILABLE"

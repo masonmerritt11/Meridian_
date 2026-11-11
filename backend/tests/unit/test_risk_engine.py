@@ -147,3 +147,11 @@ def test_volatility_and_expiry_and_spread():
 def test_deterministic():
     a, b = evaluate(make()), evaluate(make())
     assert (a.outcome, a.reason_codes, a.sizing) == (b.outcome, b.reason_codes, b.sizing)
+
+
+def test_one_position_per_asset():
+    held = OpenPositionView("GOLD", "metals", "LONG", Decimal("10"), Decimal("0"))
+    r = evaluate(make(open_positions=[held]))
+    assert r.outcome == "BLOCK" and "ASSET_POSITION_LIMIT" in r.reason_codes
+    other = OpenPositionView("BTC", "crypto", "LONG", Decimal("10"), Decimal("0"))
+    assert "ASSET_POSITION_LIMIT" not in evaluate(make(open_positions=[other])).reason_codes
