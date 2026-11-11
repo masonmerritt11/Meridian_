@@ -1,4 +1,4 @@
-"""The full MERIDIAN organization: 10 departments, 55 logical roles.
+"""The full MERIDIAN organization: 11 departments, 59 logical roles.
 Roles with an implementing worker class are registered ACTIVE; the rest are PLANNED (defined, not running).
 PLANNED roles are never shown as healthy or producing output."""
 from __future__ import annotations
@@ -15,6 +15,8 @@ DEPARTMENTS: list[tuple[str, str, str]] = [
     ("executive", "Executive Management & Investment Committee", "Coordination, research oversight, committee."),
     ("research", "Trading Psychology & Philosophy Research",
      "Reads trading psychology and philosophy continuously; learns and recommends only."),
+    ("predictions", "Prediction Markets",
+     "Kalshi 15-minute crypto up/down markets: odds history, strategy testing, live setups. Never holds through close."),
 ]
 
 # (role_id, department, name, responsibility, escalation_to)
@@ -86,7 +88,15 @@ ROLES: list[tuple[str, str, str, str, str]] = [
     ("research.philosophy", "research", "Trading Philosophy Researcher",
      "Reads trading philosophies and strategy research; proposes ideas that fit MERIDIAN.", "research.director"),
     ("research.director", "research", "Research Director", "Daily synthesis of what the department learned.", "cio"),
+    # Prediction markets (4) — advisory only
+    ("pm.live_desk", "predictions", "Live Odds Desk",
+     "Every 2 seconds: prices the open window from live BTC, flags when Kalshi underprices the underdog, raises setups.", "pm.risk_officer"),
+    ("pm.historian", "predictions", "Odds Historian", "Backfills past windows: 1-minute odds, outcomes and BTC minutes.", "pm.strategy_lab"),
+    ("pm.strategy_lab", "predictions", "Strategy Lab",
+     "Tests thousands of entry/exit rules (train on older windows, verify on newer) and studies late flips.", "cio"),
+    ("pm.risk_officer", "predictions", "Prediction Risk Officer",
+     "$70 worst-case loss per setup, one per window, no entries in the last 4 minutes, exit at least 2 minutes before close.", "cio"),
 ]
 
-assert len(DEPARTMENTS) == 10
-assert len(ROLES) == 55, len(ROLES)
+assert len(DEPARTMENTS) == 11
+assert len(ROLES) == 59, len(ROLES)

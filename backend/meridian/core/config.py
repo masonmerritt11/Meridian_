@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     llm_price_output_per_mtok: float = Field(10.0, alias="LLM_PRICE_OUTPUT_PER_MTOK")
     llm_price_per_web_search: float = Field(0.01, alias="LLM_PRICE_PER_WEB_SEARCH")
 
+    # Prediction markets desk (Kalshi public market data; read-only, no key)
+    pm_enabled: bool = Field(True, alias="PM_ENABLED")
+    pm_series: str = Field("KXBTC15M", alias="PM_SERIES")
+    pm_poll_seconds: float = Field(2.0, alias="PM_POLL_SECONDS")
+    pm_backfill_days: int = Field(30, alias="PM_BACKFILL_DAYS")
+    pm_max_loss_usd: float = Field(70.0, alias="PM_MAX_LOSS_USD")
+
     run_workers: bool = Field(True, alias="RUN_WORKERS")
     stream_prefix: str = Field("meridian", alias="STREAM_PREFIX")
     static_dir: str = Field("", alias="STATIC_DIR")

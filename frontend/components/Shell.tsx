@@ -11,6 +11,7 @@ const NAV = [
   ["/risk/", "Risk Command"],
   ["/lab/", "Research Laboratory"],
   ["/archive/", "Decision Archive"],
+  ["/predictions/", "Prediction Desk"],
   ["/research/", "Learning Journal"],
 ];
 

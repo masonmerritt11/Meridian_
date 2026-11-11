@@ -746,3 +746,70 @@ def worker_detail(worker_id: str, s: Session = Depends(get_db), _: Principal = R
         "events_consumed": consumed,
         "research": research,
     })
+
+
+# ------------------------------------------------------------------ prediction markets (advisory only)
+@router.get("/predictions/live")
+def predictions_live(request: Request, s: Session = Depends(get_db), _: Principal = Read) -> dict[str, Any]:
+    from meridian.db.models import PmSignal, PmTick, PmWindow, WorkerHeartbeat
+    from meridian.predictions.live import ALIGN_MIN_EDGE, active_strategy
+    from meridian.predictions.model import Sides, edge
+    st = get_settings()
+    last = s.execute(select(PmTick).order_by(desc(PmTick.id)).limit(1)).scalar()
+    hb = s.get(WorkerHeartbeat, "pm.live_desk")
+    window = s.get(PmWindow, last.ticker) if last else None
+    ticks = []
+    if last:
+        ticks = [_row(t, "ts", "sec_left", "yes_bid", "yes_ask", "btc", "fair_yes") for t in reversed(list(
+            s.execute(select(PmTick).where(PmTick.ticker == last.ticker).order_by(desc(PmTick.id)).limit(450)).scalars()))]
+    view: dict[str, Any] | None = None
+    if last and window:
+        sd = Sides(float(last.yes_bid) if last.yes_bid is not None else None,
+                   float(last.yes_ask) if last.yes_ask is not None else None)
+        f = float(last.fair_yes) if last.fair_yes is not None else None
+        u = sd.underdog()
+        ue = edge(f, u, sd.ask(u)) if u else None
+        view = {"ticker": window.ticker, "open_time": window.open_time, "close_time": window.close_time,
+                "strike": window.strike, "as_of": last.ts, "sec_left": last.sec_left, "btc": last.btc,
+                "yes_bid": last.yes_bid, "yes_ask": last.yes_ask, "no_bid": sd.bid("NO"), "no_ask": sd.ask("NO"),
+                "fair_yes": f, "underdog": u, "underdog_ask": sd.ask(u) if u else None,
+                "underdog_fair": None if f is None or u is None else (f if u == "YES" else 1 - f),
+                "underdog_edge": ue, "aligned": ue is not None and ue >= ALIGN_MIN_EDGE,
+                "stale": (utcnow() - last.ts).total_seconds() > 15}
+    sigs = [_row(x, "id", "ticker", "kind", "strategy_key", "proven", "side", "entry_price", "fair", "edge", "contracts",
+                 "max_loss", "take_profit", "exit_by", "status", "exit_price", "paper_pnl", "detail", "created_at", "updated_at")
+            for x in s.execute(select(PmSignal).order_by(desc(PmSignal.id)).limit(40)).scalars()]
+    strat, proven, describe = active_strategy(s)
+    return jsonable({"enabled": st.pm_enabled and st.market_data_mode == "coinbase", "series": st.pm_series,
+                     "poll_seconds": st.pm_poll_seconds, "max_loss_usd": st.pm_max_loss_usd,
+                     "desk": {"status": hb.status if hb else None, "last_seen": hb.last_seen if hb else None,
+                              "detail": hb.detail if hb else {}},
+                     "window": view, "ticks": ticks, "signals": sigs,
+                     "active_strategy": {"key": strat.key, "proven": proven, "describe": describe},
+                     "rules": ["Worst-case loss per setup is capped at the max loss (the whole premium plus fee).",
+                               "One setup of each kind per window.", "No new setups in the final 4 minutes.",
+                               "Every setup exits at least 2 minutes before close. Never hold through close."]})
+
+
+@router.get("/predictions/research")
+def predictions_research(s: Session = Depends(get_db), _: Principal = Read) -> dict[str, Any]:
+    from meridian.db.models import PmLabRun, PmSignal, PmWindow
+    st = get_settings()
+    run = s.execute(select(PmLabRun).order_by(desc(PmLabRun.id)).limit(1)).scalar()
+    total = s.execute(select(func.count()).select_from(PmWindow).where(PmWindow.series == st.pm_series)).scalar()
+    with_bars = s.execute(select(func.count()).select_from(PmWindow).where(
+        PmWindow.series == st.pm_series, PmWindow.bars_loaded.is_(True))).scalar()
+    rng = s.execute(select(func.min(PmWindow.open_time), func.max(PmWindow.open_time)).where(
+        PmWindow.series == st.pm_series, PmWindow.bars_loaded.is_(True))).first()
+    done = list(s.execute(select(PmSignal).where(PmSignal.paper_pnl.isnot(None))).scalars())
+    track: dict[str, Any] = {}
+    for kind in ("ALIGNED_UNDERDOG", "STRATEGY"):
+        xs = [x for x in done if x.kind == kind]
+        if xs:
+            track[kind] = {"n": len(xs), "wins": sum(1 for x in xs if x.paper_pnl > 0),
+                           "avg_pnl_cents": float(sum(x.paper_pnl for x in xs) / len(xs) * 100),
+                           "usd_at_full_size": float(sum(x.paper_pnl * x.contracts for x in xs))}
+    return jsonable({"coverage": {"windows": total, "with_odds_history": with_bars,
+                                  "from": rng[0] if rng else None, "to": rng[1] if rng else None,
+                                  "backfill_days": st.pm_backfill_days},
+                     "lab": ({"run_at": run.created_at, **run.result} if run else None), "paper_track_record": track})

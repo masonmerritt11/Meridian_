@@ -5,7 +5,7 @@ const TONE: Record<string, string> = {
   HEALTHY: "ok", FRESH: "ok", ALLOW: "ok", RECOMMEND: "ok", RECOMMENDED: "ok", HOLD: "ok", ACTIVE: "ok", ACCEPT: "ok", LONG: "ok", SUPPORTS: "ok",
   RESTRICT: "warn", DEGRADED: "warn", STALE: "warn", DEFER: "warn", DEFERRED: "warn", REVIEW: "warn", UNKNOWN: "warn", NEUTRAL: "muted",
   BLOCK: "bad", BLOCKED: "bad", FAILING: "bad", EXIT: "bad", UNAVAILABLE: "bad", REJECT: "bad", REJECTED: "bad", OPPOSES: "bad", SHORT: "bad", DECLINE: "bad",
-  PLANNED: "muted", SUCCEEDED: "ok", RELAYED: "ok", MATCH: "ok", FAILED: "bad", MISMATCH: "bad", OUTBOX: "warn", RUNNING: "info", PENDING: "muted", INACTIVE: "muted", CLOSED: "muted", EXPIRED: "muted", INVALIDATED: "muted", SIMULATED: "sim",
+  PLANNED: "muted", SUCCEEDED: "ok", RELAYED: "ok", MATCH: "ok", FAILED: "bad", MISMATCH: "bad", OUTBOX: "warn", RUNNING: "info", PENDING: "muted", INACTIVE: "muted", CLOSED: "muted", EXPIRED: "muted", INVALIDATED: "muted", SIMULATED: "sim", ALIGNED: "ok", PROVEN: "ok", UNPROVEN: "warn", TAKE_PROFIT: "ok", EXIT_NOW: "bad",
 };
 
 /** Machine codes (RISK_REVIEW) shown as readable words (RISK REVIEW); the raw code stays in the tooltip. */

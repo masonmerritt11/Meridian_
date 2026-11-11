@@ -37,3 +37,6 @@ Hard stops (left for Mason): risk-limit changes (need his password), new paid se
 
 ## Needs Mason in the morning
 - Raise max_total_open_risk_pct (Risk Command, needs password) if you want several positions open at once.
+
+## 2026-11-11 — Prediction Desk
+Added the Prediction Markets department (Kalshi 15-minute BTC): live 2-second desk, odds historian, strategy lab with walk-forward verification, hard exit-before-close rule (code + DB trigger), dashboard page with sound/browser alerts. See docs/PREDICTION_MARKETS.md. 87 tests passing.

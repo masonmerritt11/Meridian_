@@ -13,7 +13,9 @@ from meridian.registry.catalog import DEPARTMENTS, ROLES
 from meridian.workers.base import BaseWorker
 
 INFRA_IMPLEMENTED = {"data.event_relay": "Runtime relay loop (no worker class)",
-                     "portfolio.constructor": "Allocation plan computed on demand (GET /api/portfolio/plan)"}
+                     "portfolio.constructor": "Allocation plan computed on demand (GET /api/portfolio/plan)",
+                     "pm.live_desk": "Runtime loop every PM_POLL_SECONDS (predictions/live.py)",
+                     "pm.risk_officer": "Hard rules enforced inside the live desk and by a database trigger"}
 
 
 def seed_registry(s: Session, workers: list[type[BaseWorker]]) -> None:

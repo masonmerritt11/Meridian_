@@ -86,6 +86,7 @@ class Runtime:
         self._load_last_runs()
         self._spawn("scheduler", self._scheduler_loop, False)
         self._spawn("scheduler-slow", self._scheduler_loop, True)
+        self._start_prediction_desk()
         log.info("runtime started", extra={"consumers": [s.group for s in self.subs]})
 
     def stop(self) -> None:
@@ -130,6 +131,42 @@ class Runtime:
             if w.spec.schedule_seconds is None and time.time() - last_hb > 30:
                 heartbeat(self.ctx.session_factory, sub.group, "HEALTHY", {"consumer": "listening", **sub.stats})
                 last_hb = time.time()
+
+    def _start_prediction_desk(self) -> None:
+        from meridian.predictions.live import LiveDesk
+        from meridian.predictions.workers import services
+        k, b = services(self.ctx)
+        if k is None or b is None:
+            return
+        self.pm_desk = LiveDesk(kalshi=k, btc=b, series=self.settings.pm_series, max_loss=self.settings.pm_max_loss_usd)
+        self._spawn("pm-live", self._pm_loop)
+
+    def _pm_loop(self) -> None:
+        last_hb = last_err_log = 0.0
+        errors = 0
+        while not self._stop.is_set():
+            t0 = time.time()
+            if not is_active(self.ctx.session_factory, "pm.live_desk"):
+                self._stop.wait(5)
+                continue
+            s = self.ctx.session_factory()
+            try:
+                self.pm_desk.tick(s)
+                s.commit()
+                errors = 0
+            except Exception as e:  # noqa: BLE001 — keep polling; log at most once a minute
+                s.rollback()
+                errors += 1
+                self.pm_desk.last = {"state": "ERROR", "error": repr(e)[:300], "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+                if time.time() - last_err_log > 60:
+                    log.warning("prediction desk tick failed", extra={"error": repr(e)[:300], "consecutive": errors})
+                    last_err_log = time.time()
+            finally:
+                s.close()
+            if time.time() - last_hb > 15:
+                heartbeat(self.ctx.session_factory, "pm.live_desk", "FAILING" if errors >= 5 else "HEALTHY", dict(self.pm_desk.last))
+                last_hb = time.time()
+            self._stop.wait(max(0.2, self.settings.pm_poll_seconds - (time.time() - t0)) if errors < 5 else 10)
 
     def _load_last_runs(self) -> None:
         """Resume schedules from the database so a redeploy does not re-run every worker (and re-spend on LLM calls)."""

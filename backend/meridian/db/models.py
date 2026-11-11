@@ -472,3 +472,80 @@ class RecommendationOutcome(Base):
     bars_observed: Mapped[int] = mapped_column(Integer, default=0)
     resolved_at: Mapped[datetime | None] = _ts(nullable=True, default=False)
     updated_at: Mapped[datetime] = _ts()
+
+
+# ---------------------------------------------------------------- prediction markets (Kalshi 15-minute windows)
+class PmWindow(Base):
+    __tablename__ = "pm_windows"
+    ticker: Mapped[str] = mapped_column(String(96), primary_key=True)
+    series: Mapped[str] = mapped_column(String(32), index=True)
+    open_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    close_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    strike: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    result: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="")
+    bars_loaded: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = _ts()
+
+
+class PmBar(Base):
+    __tablename__ = "pm_bars"
+    ticker: Mapped[str] = mapped_column(String(96), ForeignKey("pm_windows.ticker", ondelete="CASCADE"), primary_key=True)
+    minute: Mapped[int] = mapped_column(Integer, primary_key=True)
+    end_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    yes_bid: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    yes_ask: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    yes_bid_high: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    yes_bid_low: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    yes_ask_high: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    yes_ask_low: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    volume: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+
+
+class PmBtcMinute(Base):
+    __tablename__ = "pm_btc_minutes"
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)  # minute start (Coinbase BTC-USD)
+    close: Mapped[Decimal] = mapped_column(NUM)
+
+
+class PmTick(Base):
+    __tablename__ = "pm_ticks"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String(96), index=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    sec_left: Mapped[int] = mapped_column(Integer)
+    yes_bid: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    yes_ask: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    btc: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    fair_yes: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+
+
+class PmSignal(Base):
+    __tablename__ = "pm_signals"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String(96), index=True)
+    kind: Mapped[str] = mapped_column(String(24))  # ALIGNED_UNDERDOG | STRATEGY
+    strategy_key: Mapped[str] = mapped_column(String(160))
+    proven: Mapped[bool] = mapped_column(Boolean, default=False)
+    side: Mapped[str] = mapped_column(String(4))
+    entry_price: Mapped[Decimal] = mapped_column(NUM)
+    fair: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    edge: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    contracts: Mapped[int] = mapped_column(Integer)
+    max_loss: Mapped[Decimal] = mapped_column(NUM)
+    take_profit: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    exit_by: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), default="ACTIVE")  # ACTIVE | TAKE_PROFIT | EXIT_NOW | CLOSED
+    exit_price: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    paper_pnl: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)  # per contract, after fees, if followed exactly
+    detail: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = _ts()
+    updated_at: Mapped[datetime] = _ts()
+
+
+class PmLabRun(Base):
+    __tablename__ = "pm_lab_runs"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    windows: Mapped[int] = mapped_column(Integer)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = _ts()

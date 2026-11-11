@@ -516,8 +516,9 @@ CORE_WORKERS: list[type[BaseWorker]] = [
 from meridian.analysts.desk import DESK_WORKERS  # noqa: E402
 from meridian.analysts.macro_llm import MACRO_LLM_WORKERS  # noqa: E402
 from meridian.analysts.market import MARKET_ANALYSTS  # noqa: E402
+from meridian.predictions.workers import PREDICTION_WORKERS  # noqa: E402
 from meridian.research.workers import RESEARCH_WORKERS  # noqa: E402
 
-ALL_WORKERS: list[type[BaseWorker]] = CORE_WORKERS + MARKET_ANALYSTS + DESK_WORKERS + MACRO_LLM_WORKERS + RESEARCH_WORKERS
+ALL_WORKERS: list[type[BaseWorker]] = CORE_WORKERS + MARKET_ANALYSTS + DESK_WORKERS + MACRO_LLM_WORKERS + RESEARCH_WORKERS + PREDICTION_WORKERS
 
 __all__ = ["ALL_WORKERS", "BaseModel", "uuid"]
