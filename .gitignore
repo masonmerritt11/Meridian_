@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
+frontend/tsconfig.tsbuildinfo
+*.whl
+build/
+frontend/package-lock.json
+docs/openapi.json
+docs/event-schemas.json

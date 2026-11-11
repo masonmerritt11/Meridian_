@@ -1,0 +1,21 @@
+{
+  "name": "meridian-command-center",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "15.5.4",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.7.4",
+    "@types/react": "19.1.12",
+    "@types/react-dom": "19.1.9",
+    "typescript": "5.6.2"
+  }
+}
