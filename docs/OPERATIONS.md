@@ -8,6 +8,17 @@
 
 Advisory meanings: **HOLD** means the trend is intact, the stop has not been hit and no exit trigger is present. **EXIT** comes with reasons: STOP_BREACHED, LOSS_LIMIT_REACHED, TARGET_REACHED, TREND_INVALIDATED, CONTRACT_EXPIRING. **REVIEW** means MERIDIAN cannot vouch for HOLD (stale or missing data, or a high-impact event is imminent).
 
+## Learning Journal (research department)
+* **Read:** Learning Journal shows the latest synthesis, every note with its sources, and the reading list.
+* **Steer:** "Ask them to study" puts a topic at the front of a researcher's queue.
+* **Decide:** Accept / Park / Reject each recommendation. This records your decision; changes to the system are made deliberately afterwards.
+* **Cost:** AI spend today vs the cap is shown at the top. Change the cap with the `LLM_DAILY_BUDGET_USD` variable in Railway.
+  To pause the department, deactivate the three research workers in Department Operations.
+
+## Worker detail
+Department Operations → click any working role: what it is doing now, its latest output per asset, 24h reliability, AI spend,
+what a researcher is reading next, events it produced/handled, run history with errors, and its configuration and schemas.
+
 ## Health signals
 | Signal | Where | Action |
 |---|---|---|
@@ -15,6 +26,8 @@ Advisory meanings: **HOLD** means the trend is intact, the stop has not been hit
 | Dataset STALE / UNAVAILABLE | Overview → freshness | Risk blocks new ideas on stale candles; check provider reachability / `check-coinbase` |
 | macro_calendar UNAVAILABLE | Radar → Macro calendar | Ideas are RESTRICTed (EVENT_DATA_UNAVAILABLE); check the calendar manually before acting |
 | DLQ depth > 0 | Operations → Dead-letter queue | Fix the cause, then `POST /api/events/replay {"consumer": "<worker id>", "force": false}` |
+| Compliance Officer FAIL | Operations → Risk & Compliance → Compliance Officer | Read the problems list (order code, missing trigger, broken audit chain) |
+| AI calls failing | Learning Journal banner / `llm call failed` in logs | Check the key and Anthropic credit balance; the cap resets daily (UTC) |
 | Audit chain broken | Decision Archive | Treat as a security incident; `python -m meridian.cli verify-audit` |
 
 ## Common procedures

@@ -17,9 +17,20 @@ This is not production-ready for real-money decisions until the items marked **m
 * Gaps through a stop can lose more than the planned $70; the engine sizes to the stop and cannot prevent slippage.
 * Assumptions I chose (change in Risk Command): total open risk 10%, correlated risk 10%, daily 10%, weekly 20%, notional ceiling 10×, event blackout −60/+30 min.
 
+## Analysts and research
+* Analyst rules are reasonable textbook measures (EMA alignment, RSI, Bollinger squeeze, efficiency ratio, z-scores, EWMA vol), not
+  backtested signals. Their votes move the committee score; the recommendation track record (Attribution worker) is how we will learn
+  which ones help.
+* The basis and carry analysts use the exchange index price captured at discovery (every 6 hours), so they lag.
+* Trading fees are not in the public API; the trading-cost analyst counts the spread only.
+* AI researchers and macro analysts can still misread a source. Their sources are listed so you can check them, invented URLs are
+  dropped, and macro views without retrieved sources get almost no weight.
+* The AI spend cap is checked before each call; a single long call can overshoot it by up to about $0.40.
+* If web search is disabled on the Anthropic account, researchers fall back to arXiv abstracts (narrower reading).
+
 ## Platform
 * Workers run in-process; deploy with exactly one replica.
 * Docker Compose and the Railway build were not executed in the build environment (no Docker daemon). The same installed package was run in production mode against local Postgres/Redis and the static dashboard served correctly.
 * No password reset UI; manage users via the CLI. No MFA.
-* 41 of 52 roles are defined but not implemented (marked PLANNED in the UI).
+* 1 of 55 roles is planned (cross-venue arbitrage: needs price feeds from other exchanges).
 * No LLM components yet; when added, they must remain commentary-only within fixed schemas.

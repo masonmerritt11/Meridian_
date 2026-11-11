@@ -9,7 +9,11 @@ An auditable, advisory-only trading research platform. MERIDIAN watches **Gold, 
 | Area | Status |
 |---|---|
 | PostgreSQL schema + Alembic migrations (with DB-level veto/immutability triggers) | done |
-| Worker registry: 9 departments, 52 roles (11 implemented, 41 defined as PLANNED) | done |
+| Worker registry: 10 departments, 55 roles (54 working; cross-venue arbitrage planned, needs other exchanges' data) | done |
+| 35 analysts across trend, stat arb, volatility, liquidity, macro, risk, portfolio, ops (views attach to cases as evidence) | done |
+| Trading Psychology & Philosophy Research department + Learning Journal (AI reads real sources; learns and recommends only) | done |
+| Portfolio Constructor: ranks live ideas and allocates the account within your limits | done |
+| Recommendation track record (did price hit target or stop first, taken or not) | done |
 | Event bus: Postgres outbox + Redis Streams, idempotent consumers, retries, DLQ, expiry, replay | done |
 | Coinbase public market-data adapter (read-only, rate-limited, validated) | done, **not yet verified against the live API** (see limitations) |
 | Simulated provider (clearly labeled) for demo/testing | done |
@@ -21,15 +25,21 @@ An auditable, advisory-only trading research platform. MERIDIAN watches **Gold, 
 | Position monitor (HOLD / EXIT / REVIEW on CIO-recorded positions) | done |
 | Command center (6 sections, dark mode, live backend state) | done |
 | Auth (JWT cookie, CIO/VIEWER roles), audit hash-chain, recommendation reconstruction | done |
-| 58 automated tests (unit + integration on real Postgres/Redis) | passing |
+| 75 automated tests (unit + integration on real Postgres/Redis; AI calls mocked) | passing |
 
 ## Your risk rules (defaults, editable in Risk Command with password re-entry)
 
 * Starting capital **$700** (`STARTING_CAPITAL`).
-* **Max loss per trade = 10% of equity ($70).** Size = floor(budget ÷ (|entry − stop| × contract size)). If one contract would risk more than $70, the idea is **BLOCKED**.
-* **Total open risk across all positions ≤ 10%.** Recording a position automatically sends other open recommendations back through risk, so you cannot accidentally stack two $70 risks.
-* Capital usage up to 100% of equity (your instruction). Futures margin is not in Coinbase's public API, so enter it per asset (`margin_per_contract`) or ideas stay **RESTRICT: MARGIN_UNVERIFIED**.
+* **Max loss per position = 10% of equity ($70)**, however many contracts the position has. Size = floor(budget ÷ (|entry − stop| × contract size)). If one contract would risk more than $70, the idea is **BLOCKED**.
+* **Total open risk across all positions:** set by `max_total_open_risk_pct` (default 10%; raise it in Risk Command to run several positions at once). Recording a position automatically sends other open recommendations back through risk.
+* **One position per asset** (`max_positions_per_asset`, default 1).
+* Capital usage up to 100% of equity (your instruction). Cash per contract comes from Coinbase's published intraday/overnight margin rates (the higher of the two); a `margin_per_contract` entry overrides it.
 * Leverage ceiling: gross notional ≤ 10× equity. Daily loss limit 10%, weekly 20%. Event blackout 60 min before / 30 min after high-impact USD events (plus crude/OPEC events for oil).
+
+## AI usage and cost
+The research department and five macro analysts use Claude (`claude-sonnet-5-5`) through `ANTHROPIC_API_KEY`.
+Hard cap `LLM_DAILY_BUDGET_USD` (default $3/day) plus per-worker caps; every call is logged with its cost in the Learning Journal.
+AI output is commentary and recommendations only. It never sets prices, sizes, stops or risk decisions.
 
 ## Quick start
 

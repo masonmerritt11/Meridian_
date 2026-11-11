@@ -17,6 +17,8 @@ Fair Economy feed ───┴─> macro.calendar_analyst                       
 * **Outbox:** producers call `publish(session, envelope)` inside the same DB transaction as their state change. The relay moves rows to the Redis stream `meridian:events`. If Redis is down, events wait in Postgres.
 * **Envelope:** `event_id`, `event_type`, `schema_version`, `correlation_id`, `causation_id`, `producer` (worker@version), `occurred_at` (UTC), `expires_at`, `input_refs[]` (kind, ref, hash), `payload`. Payloads are validated against registered Pydantic models at publish time (`python -m meridian.cli export-schemas` writes them to `docs/event-schemas.json`).
 * **Consumers:** one Redis consumer group per worker. Processing happens in a DB transaction that also writes `(consumer, event_id)` into `event_consumptions`, so duplicate deliveries are no-ops (idempotent).
+* **Scheduling:** last run times are reloaded from `worker_runs` at startup, so redeploys do not re-run (or re-spend) everything.
+  AI workers run on a separate scheduler thread so slow calls never delay risk and data workers.
 * **Retries and DLQ:** failures stay pending and are re-claimed after a backoff (`XAUTOCLAIM`). After `max_attempts` they are written to `dead_letters` plus the `meridian:dlq` stream, then acknowledged.
 * **Expiry:** expired events are acknowledged and recorded as `EXPIRED`, not processed.
 * **Replay:** `EventBus.replay()` re-runs stored events from Postgres through a consumer (idempotent by default, `force=True` to reprocess). Exposed at `POST /api/events/replay` (CIO).
@@ -36,6 +38,33 @@ Fair Economy feed ───┴─> macro.calendar_analyst                       
 | risk.chief_risk_officer | case.challenged | Runs the risk engine; decision is final |
 | exec.committee_coordinator | risk decision | Memo, ranking score, dissent, uncertainty |
 | risk.position_monitor | every 60s + candles/position events | HOLD / EXIT / REVIEW for CIO-recorded positions |
+
+## Analysts (`meridian/analysts`)
+Scheduled workers that publish **assessments**: a label, an optional directional score (-1 to +1, + = bullish), confidence,
+a plain-language summary and data, per asset or for MARKET / PORTFOLIO / SYSTEM (`analyst_assessments`).
+When the Research Officer challenges a case it attaches every fresh assessment for that asset as evidence: SUPPORTS / OPPOSES /
+NEUTRAL from the score relative to the trade direction, or a direction-agnostic stance (for example "ranging market" opposes any
+breakout trade). Department leads and the Chief Macro Officer publish consensus views that are shown but not counted again.
+
+| Department | Workers |
+|---|---|
+| Trend | breakout specialist, momentum ranker, multi-timeframe, exhaustion monitor, carry & roll, lead |
+| Stat arb | pairs (gold/silver, BTC/ETH), cointegration, mean reversion, basis, lead (cross-venue planned) |
+| Volatility | realized vol, regime classifier, EWMA forecaster, tail risk, correlation matrix |
+| Liquidity | order book, spread monitor, liquidity score, sessions, trading cost |
+| Global macro | cross-asset regime (deterministic); central banks, inflation, rates & dollar, energy, geopolitics (AI + web search, every 12h) |
+| Risk | exposure, limits officer, compliance self-check, event risk |
+| Portfolio | constructor, sizer, correlation budget, attribution / track record, equity & P&L |
+| Data ops | reliability engineer, audit archivist |
+| Executive | Chief Macro Officer (macro consensus), CIO Liaison (daily brief) |
+
+## Research department (`meridian/research`)
+Two researchers (psychology, philosophy) each study one topic about every 3 hours from a queue (seed topics, their own follow-ups,
+and topics the CIO adds). Each session uses Anthropic web search + web fetch (max 4 searches, 2 full reads), then writes a note
+(summary, key ideas, evidence quality, how it applies, what the crowd gets wrong, sources) and optionally a recommendation.
+Only sources actually retrieved in the session are kept. The Research Director writes a synthesis every 6 hours.
+Recommendations wait for the CIO (accept / park / reject); decisions are recorded and never change the live system automatically.
+`research/llm.py` enforces the daily and per-worker spend caps and records every call in `llm_usage`.
 
 ## Research case lifecycle
 `DETECTED → RESEARCHING → CHALLENGED → RISK_REVIEW → COMMITTEE_REVIEW → RECOMMENDED | DEFERRED | REJECTED | BLOCKED → EXPIRED | INVALIDATED | CLOSED`, with back-transitions to `RESEARCHING` from CHALLENGED, RISK_REVIEW, COMMITTEE_REVIEW, RECOMMENDED, DEFERRED and BLOCKED when new evidence appears (for example a portfolio change). The original hypothesis is immutable (DB trigger); revisions, evidence, transitions, risk decisions, memos and CIO decisions are all kept.
