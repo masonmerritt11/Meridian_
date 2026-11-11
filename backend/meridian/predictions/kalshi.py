@@ -236,7 +236,7 @@ class KalshiMarkets:
             return {}
         start = int(min(w.open_time for w in windows if w.open_time).timestamp())  # type: ignore[union-attr]
         end = int(max(w.close_time for w in windows if w.close_time).timestamp())  # type: ignore[union-attr]
-        data = self.client.get("/markets/candlesticks", {"tickers": ",".join(w.ticker for w in windows),
+        data = self.client.get("/markets/candlesticks", {"market_tickers": ",".join(w.ticker for w in windows),
                                                           "start_ts": start, "end_ts": end, "period_interval": 1})
         by = {w.ticker: w for w in windows}
         out: dict[str, list[Bar]] = {}
