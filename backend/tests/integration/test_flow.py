@@ -68,7 +68,7 @@ def test_end_to_end_vertical_slice(clean_env):
     login(c)
 
     ov = c.get("/api/overview").json()
-    assert ov["simulated"] is True and ov["workers_implemented"] == 12 and ov["workers_total"] == 52
+    assert ov["simulated"] is True and ov["workers_implemented"] == 54 and ov["workers_total"] == 55
     assert any(f["dataset"] == "macro_calendar" and f["status"] == "FRESH" for f in ov["freshness"])
 
     cases = c.get("/api/cases").json()
@@ -227,7 +227,7 @@ def test_inactive_worker_does_not_consume(clean_env):
     c = client()
     login(c)
     assert c.post("/api/workers/trend.signal_analyst/status", json={"status": "INACTIVE"}).status_code == 200
-    assert c.post("/api/workers/stat_arb.pairs/status", json={"status": "ACTIVE"}).status_code == 409  # planned role
+    assert c.post("/api/workers/stat_arb.cross_venue/status", json={"status": "ACTIVE"}).status_code == 409  # planned role
     out = run_demo(clean_env, macro=FakeMacro())
     assert out["memos"] == []
     with session_scope() as s:

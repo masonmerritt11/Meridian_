@@ -33,6 +33,13 @@ def run_demo(settings: Settings, macro: Any = None) -> dict[str, Any]:
             steps[wid] = rt.run_scheduled(wid).model_dump()
         except Exception as e:  # noqa: BLE001 — e.g. macro feed unreachable: pipeline continues with UNAVAILABLE state
             steps[wid] = {"error": repr(e)}
+    for wid, w in rt.workers.items():  # analysts publish views before cases are researched
+        if w.spec.schedule_seconds and not w.slow and wid.split(".")[0] in ("trend", "stat_arb", "vol", "liquidity", "macro") \
+                and wid not in ("macro.calendar_analyst",):
+            try:
+                rt.run_scheduled(wid)
+            except Exception as e:  # noqa: BLE001
+                steps[wid] = {"error": repr(e)}
     steps["events_handled"] = rt.drain()
     steps["position_monitor"] = rt.run_scheduled("risk.position_monitor").model_dump()
     with session_scope() as s:

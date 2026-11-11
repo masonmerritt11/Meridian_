@@ -578,3 +578,171 @@ def demo_run(request: Request, s: Session = Depends(get_db), p: Principal = Cio)
     audit.record(s, f"cio:{p.username}", "demo.run", "demo", "simulated", {})
     s.commit()
     return run_demo(get_settings())
+
+
+# ------------------------------------------------------------------ research department (Learning Journal)
+@router.get("/research/journal")
+def research_journal(worker: str | None = None, limit: int = 60, s: Session = Depends(get_db), _: Principal = Read) -> dict[str, Any]:
+    from meridian.core.config import get_settings as _gs
+    from meridian.db.models import LlmUsage, ResearchNote, ResearchRecommendation, ResearchTopic
+    from meridian.research.llm import spent_since, spent_today
+    q = select(ResearchNote).order_by(desc(ResearchNote.created_at)).limit(min(limit, 300))
+    if worker:
+        q = q.where(ResearchNote.worker_id == worker)
+    notes = [_row(n, "id", "worker_id", "kind", "topic", "title", "summary", "key_ideas", "evidence_quality",
+                  "applies_to_meridian", "contrarian_angle", "sources", "cost_usd", "created_at") for n in s.execute(q).scalars()]
+    recs = [_row(r, "id", "worker_id", "note_id", "title", "proposal", "rationale", "component", "how_to_test", "confidence",
+                 "status", "cio_note", "decided_by", "decided_at", "created_at")
+            for r in s.execute(select(ResearchRecommendation).order_by(desc(ResearchRecommendation.created_at)).limit(200)).scalars()]
+    queue = [_row(t, "id", "worker_id", "topic", "origin", "priority", "status", "created_at", "done_at")
+             for t in s.execute(select(ResearchTopic).order_by(ResearchTopic.status.desc(), ResearchTopic.priority, ResearchTopic.id)
+                                .limit(200)).scalars()]
+    total_notes = s.execute(select(func.count()).select_from(ResearchNote).where(ResearchNote.kind == "NOTE")).scalar()
+    total_sources = sum(len(n["sources"]) for n in notes if n["kind"] == "NOTE")
+    last_err = s.execute(select(LlmUsage).where(LlmUsage.ok.is_(False)).order_by(desc(LlmUsage.created_at)).limit(1)).scalar()
+    st = _gs()
+    return {"notes": notes, "recommendations": recs, "queue": queue,
+            "stats": {"notes": total_notes, "sources_in_view": total_sources,
+                      "proposed": sum(1 for r in recs if r["status"] == "PROPOSED")},
+            "spend": {"today_usd": str(spent_today(s).quantize(Decimal("0.01"))),
+                      "last_7d_usd": str(spent_since(s, 24 * 7).quantize(Decimal("0.01"))),
+                      "daily_cap_usd": str(st.llm_daily_budget_usd), "model": st.llm_model,
+                      "enabled": bool(st.anthropic_api_key),
+                      "last_error": _row(last_err, "worker_id", "error", "created_at") if last_err else None}}
+
+
+class RecDecisionBody(BaseModel):
+    status: Literal["ACCEPTED", "PARKED", "REJECTED", "PROPOSED"]
+    note: str = Field("", max_length=2000)
+
+
+@router.post("/research/recommendations/{rec_id}/decision")
+def research_rec_decision(rec_id: uuid.UUID, body: RecDecisionBody, s: Session = Depends(get_db), p: Principal = Cio) -> dict[str, Any]:
+    """Records the CIO's view of a research recommendation. It never changes the live system by itself."""
+    from meridian.db.models import ResearchRecommendation
+    r = s.get(ResearchRecommendation, rec_id)
+    if r is None:
+        raise HTTPException(404, "recommendation not found")
+    r.status, r.cio_note, r.decided_by, r.decided_at = body.status, body.note, p.username, utcnow()
+    audit.record(s, f"cio:{p.username}", "research.recommendation_decision", "research_recommendation", r.id,
+                 {"status": body.status, "note": body.note})
+    s.commit()
+    return _row(r, "id", "status", "cio_note", "decided_by", "decided_at")
+
+
+class TopicBody(BaseModel):
+    worker_id: Literal["research.psychology", "research.philosophy"]
+    topic: str = Field(min_length=5, max_length=500)
+
+
+@router.post("/research/topics")
+def research_add_topic(body: TopicBody, s: Session = Depends(get_db), p: Principal = Cio) -> dict[str, Any]:
+    """CIO asks a researcher to read about something next (jumps the queue)."""
+    from meridian.db.models import ResearchTopic
+    t = ResearchTopic(worker_id=body.worker_id, topic=body.topic, origin="CIO", priority=1)
+    s.add(t)
+    audit.record(s, f"cio:{p.username}", "research.topic_requested", "research_topic", body.worker_id, {"topic": body.topic})
+    s.commit()
+    return _row(t, "id", "worker_id", "topic", "origin", "priority", "status")
+
+
+# ------------------------------------------------------------------ analysts & worker detail
+@router.get("/assessments")
+def assessments(subject: str | None = None, worker: str | None = None, hours: int = 26,
+                s: Session = Depends(get_db), _: Principal = Read) -> list[dict[str, Any]]:
+    from meridian.db.models import AnalystAssessment
+    q = select(AnalystAssessment).where(AnalystAssessment.created_at >= utcnow() - timedelta(hours=min(hours, 24 * 14)))
+    if subject:
+        q = q.where(AnalystAssessment.subject == subject)
+    if worker:
+        q = q.where(AnalystAssessment.worker_id == worker)
+    rows = s.execute(q.order_by(desc(AnalystAssessment.id)).limit(600)).scalars()
+    seen: set[tuple[str, str]] = set()
+    out = []
+    for r in rows:  # latest per (worker, subject)
+        if (r.worker_id, r.subject) in seen and not worker:
+            continue
+        seen.add((r.worker_id, r.subject))
+        out.append(_row(r, "id", "worker_id", "subject", "label", "score", "confidence", "summary", "data", "data_source", "created_at"))
+    return out
+
+
+@router.get("/brief")
+def brief(s: Session = Depends(get_db), _: Principal = Read) -> dict[str, Any]:
+    from meridian.db.models import AnalystAssessment
+    r = s.execute(select(AnalystAssessment).where(AnalystAssessment.worker_id == "exec.cio_liaison")
+                  .order_by(desc(AnalystAssessment.id)).limit(1)).scalar()
+    return _row(r, "summary", "data", "created_at") if r else {"summary": None}
+
+
+def _ago(ts: datetime) -> str:
+    m = int((utcnow() - ts).total_seconds() // 60)
+    return "just now" if m < 1 else f"{m} min ago" if m < 120 else f"{m // 60} h ago"
+
+
+@router.get("/workers/{worker_id}/detail")
+def worker_detail(worker_id: str, s: Session = Depends(get_db), _: Principal = Read) -> dict[str, Any]:
+    """Everything about one worker: what it is doing now, what it produced, how reliably it runs."""
+    from meridian.db.models import AnalystAssessment, EventConsumption, LlmUsage, ResearchNote, ResearchTopic, WorkerDefinition
+    from meridian.db.models import WorkerHeartbeat
+    d = s.get(WorkerDefinition, worker_id)
+    if d is None:
+        raise HTTPException(404, "unknown worker")
+    hb = s.get(WorkerHeartbeat, worker_id)
+    since = utcnow() - timedelta(hours=24)
+    runs = list(s.execute(select(WorkerRun).where(WorkerRun.worker_id == worker_id).order_by(desc(WorkerRun.started_at)).limit(25)).scalars())
+    stats_rows = dict(s.execute(select(WorkerRun.status, func.count()).where(WorkerRun.worker_id == worker_id,
+                                                                            WorkerRun.started_at >= since).group_by(WorkerRun.status)).all())
+    durations = [float(r.metrics.get("duration_ms", 0)) for r in runs if r.metrics]
+    running = next((r for r in runs if r.status == "RUNNING"), None)
+    outputs = [_row(a, "subject", "label", "score", "confidence", "summary", "data", "created_at")
+               for a in s.execute(select(AnalystAssessment).where(AnalystAssessment.worker_id == worker_id)
+                                  .order_by(desc(AnalystAssessment.id)).limit(40)).scalars()]
+    latest_per_subject: dict[str, Any] = {}
+    for o in outputs:
+        latest_per_subject.setdefault(o["subject"], o)
+    produced = [_row(e, "event_type", "occurred_at", "payload") for e in s.execute(
+        select(Event).where(Event.producer.like(f"{worker_id}@%")).order_by(desc(Event.seq)).limit(15)).scalars()]
+    consumed = dict(s.execute(select(EventConsumption.status, func.count()).where(EventConsumption.consumer == worker_id)
+                              .group_by(EventConsumption.status)).all())
+    research = None
+    if worker_id.startswith("research."):
+        research = {
+            "reading_next": [_row(t, "topic", "origin") for t in s.execute(
+                select(ResearchTopic).where(ResearchTopic.worker_id == worker_id, ResearchTopic.status == "QUEUED")
+                .order_by(ResearchTopic.priority, ResearchTopic.id).limit(5)).scalars()],
+            "recent_notes": [_row(n, "id", "title", "created_at") for n in s.execute(
+                select(ResearchNote).where(ResearchNote.worker_id == worker_id).order_by(desc(ResearchNote.created_at)).limit(5)).scalars()]}
+    spend = s.execute(select(func.coalesce(func.sum(LlmUsage.cost_usd), 0)).where(LlmUsage.worker_id == worker_id,
+                                                                                   LlmUsage.created_at >= since)).scalar()
+    last = runs[0] if runs else None
+    if running:
+        doing = f"Running now (started {running.started_at.isoformat()}, trigger {running.trigger})."
+    elif last:
+        err = (last.error or "").strip().splitlines()[-1:] if last.error else []
+        doing = f"Last run {last.status.lower()} {_ago(last.started_at)}: {last.output.get('summary') or (err[0] if err else 'no summary')}."
+    else:
+        doing = "Has not run yet." if d.implemented else "Planned role: no implementation yet."
+    if d.schedule_seconds and last:
+        mins = round((last.started_at + timedelta(seconds=d.schedule_seconds) - utcnow()).total_seconds() / 60)
+        doing += f" Next scheduled run in about {mins} min." if mins > 0 else " Next scheduled run is due now."
+    elif d.subscribes:
+        doing += f" Waits for events: {', '.join(d.subscribes)}."
+    return jsonable({
+        "worker": {**{k: getattr(d, k) for k in ("id", "department_id", "name", "responsibility", "status", "implemented",
+                                                  "worker_version", "config_version", "config", "schedule_seconds",
+                                                  "subscribes", "escalation_to", "input_schema", "output_schema")},
+                   **registry.worker_health(d, hb)},
+        "doing": doing,
+        "latest_outputs": list(latest_per_subject.values()),
+        "runs": [_row(r, "id", "trigger", "status", "attempts", "started_at", "finished_at", "metrics", "output",
+                      "input_refs", "error", "worker_version", "config_version", "code_version") for r in runs],
+        "stats": {"runs_24h": sum(stats_rows.values()), "succeeded_24h": stats_rows.get("SUCCEEDED", 0),
+                  "failed_24h": stats_rows.get("FAILED", 0),
+                  "success_rate_24h": (stats_rows.get("SUCCEEDED", 0) / max(1, sum(stats_rows.values()))),
+                  "avg_duration_ms": round(sum(durations) / len(durations), 1) if durations else None,
+                  "llm_spend_24h_usd": str(Decimal(str(spend)).quantize(Decimal("0.01")))},
+        "events_produced": produced,
+        "events_consumed": consumed,
+        "research": research,
+    })

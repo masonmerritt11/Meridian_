@@ -347,6 +347,8 @@ class ResearchOfficerWorker(BaseWorker):
                         f"Breakout bar range at {pct:.0%} percentile of window" + (" — volatility shock" if hot else ""),
                         {"check": "range_pct", "range_percentile": round(pct, 4)}, "vol.realized")
 
+        from meridian.analysts.evidence import attach_assessments
+        rc.metrics["analyst_views"] = attach_assessments(s, case, actor)
         lc.transition(s, case, "CHALLENGED", "independent challenge complete", actor, env)
         lc.transition(s, case, "RISK_REVIEW", "submitted to risk", actor, env)
         self.emit(s, "case.challenged", CaseEventV1(case_id=case.id, state=case.state), rc)
@@ -505,9 +507,16 @@ class PositionMonitorWorker(BaseWorker):
         return MonitorOutput(summary=f"{n} position(s), {exits} EXIT", evaluated=n, exits=exits)
 
 
-ALL_WORKERS: list[type[BaseWorker]] = [
+CORE_WORKERS: list[type[BaseWorker]] = [
     InstrumentDiscoveryWorker, MarketIngestWorker, FreshnessMonitorWorker, MacroCalendarWorker, TrendSignalWorker,
     ChiefOfStaffWorker, ResearchOfficerWorker, RiskControlWorker, CommitteeCoordinatorWorker, PositionMonitorWorker,
 ]
+
+from meridian.analysts.desk import DESK_WORKERS  # noqa: E402
+from meridian.analysts.macro_llm import MACRO_LLM_WORKERS  # noqa: E402
+from meridian.analysts.market import MARKET_ANALYSTS  # noqa: E402
+from meridian.research.workers import RESEARCH_WORKERS  # noqa: E402
+
+ALL_WORKERS: list[type[BaseWorker]] = CORE_WORKERS + MARKET_ANALYSTS + DESK_WORKERS + MACRO_LLM_WORKERS + RESEARCH_WORKERS
 
 __all__ = ["ALL_WORKERS", "BaseModel", "uuid"]

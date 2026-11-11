@@ -26,14 +26,14 @@ NOW = datetime(2026, 11, 10, 15, 30, tzinfo=UTC)
 
 
 # ---------------------------------------------------------------- organization
-def test_catalog_has_9_departments_52_roles():
-    assert len(DEPARTMENTS) == 9 and len(ROLES) == 52
+def test_catalog_has_10_departments_55_roles():
+    assert len(DEPARTMENTS) == 10 and len(ROLES) == 55
     counts = {}
     for _, d, *_ in ROLES:
         counts[d] = counts.get(d, 0) + 1
     assert counts == {"trend": 7, "stat_arb": 6, "global_macro": 7, "liquidity": 5, "volatility": 5,
-                      "portfolio": 5, "risk": 6, "data_ops": 6, "executive": 5}
-    assert len({r[0] for r in ROLES}) == 52
+                      "portfolio": 5, "risk": 6, "data_ops": 6, "executive": 5, "research": 3}
+    assert len({r[0] for r in ROLES}) == 55
 
 
 # ---------------------------------------------------------------- no execution

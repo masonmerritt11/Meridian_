@@ -91,3 +91,12 @@ label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
 .roles .role:hover { background: var(--panel-2); }
 .roles .role.planned { color: var(--muted); cursor: default; }
 pre { white-space: pre-wrap; word-break: break-word; font: 11.5px var(--mono); color: #b7c0cc; margin: 0; }
+
+.doing { background: rgba(79,179,191,.07); border: 1px solid rgba(79,179,191,.3); border-radius: 8px; padding: 10px 12px; }
+.roles .role.sel { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
+.note { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: #0e131a; }
+.note.synthesis { border-color: rgba(79,179,191,.35); }
+.note p { margin: 4px 0; }
+.note h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 10px 0 2px; }
+.note-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; cursor: pointer; }
+.brief { font-size: 13.5px; line-height: 1.6; }

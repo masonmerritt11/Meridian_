@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     product_overrides: str = Field("", alias="MERIDIAN_PRODUCT_OVERRIDES")  # JSON {"GOLD": "GOL-..."}
     candle_granularity: str = Field("ONE_HOUR", alias="CANDLE_GRANULARITY")
 
+    # Language model (research department + macro desk). No key -> those workers report UNAVAILABLE.
+    anthropic_api_key: str = Field("", alias="ANTHROPIC_API_KEY")
+    llm_model: str = Field("claude-sonnet-5-5", alias="MERIDIAN_LLM_MODEL")
+    llm_daily_budget_usd: float = Field(3.0, alias="LLM_DAILY_BUDGET_USD")
+    llm_price_input_per_mtok: float = Field(2.0, alias="LLM_PRICE_INPUT_PER_MTOK")
+    llm_price_output_per_mtok: float = Field(10.0, alias="LLM_PRICE_OUTPUT_PER_MTOK")
+    llm_price_per_web_search: float = Field(0.01, alias="LLM_PRICE_PER_WEB_SEARCH")
+
     run_workers: bool = Field(True, alias="RUN_WORKERS")
     stream_prefix: str = Field("meridian", alias="STREAM_PREFIX")
     static_dir: str = Field("", alias="STATIC_DIR")

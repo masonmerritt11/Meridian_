@@ -26,7 +26,7 @@ def decide(inputs: dict[str, Any]) -> dict[str, Any]:
         rec, why = "BLOCKED", "Risk engine BLOCK is final and cannot be overridden by the committee."
     elif strength < MIN_STRENGTH:
         rec, why = "REJECT", f"Signal strength {strength} below committee minimum {MIN_STRENGTH}."
-    elif len(opposes) >= 2 or len(opposes) > len(supports):
+    elif len(opposes) > len(supports):
         rec, why = "DEFER", "Opposing evidence outweighs supporting evidence; waiting for confirmation."
     else:
         rec, why = "RECOMMEND", "Signal confirmed; risk permits a sized position."

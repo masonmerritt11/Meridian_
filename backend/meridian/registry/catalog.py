@@ -1,4 +1,4 @@
-"""The full MERIDIAN organization: 9 departments, 52 logical roles.
+"""The full MERIDIAN organization: 10 departments, 55 logical roles.
 Roles with an implementing worker class are registered ACTIVE; the rest are PLANNED (defined, not running).
 PLANNED roles are never shown as healthy or producing output."""
 from __future__ import annotations
@@ -13,6 +13,8 @@ DEPARTMENTS: list[tuple[str, str, str]] = [
     ("risk", "Risk & Compliance", "Independent deterministic risk controls and position monitoring."),
     ("data_ops", "Data, Engineering & Operations", "Market data, event bus, reliability, audit."),
     ("executive", "Executive Management & Investment Committee", "Coordination, research oversight, committee."),
+    ("research", "Trading Psychology & Philosophy Research",
+     "Reads trading psychology and philosophy continuously; learns and recommends only."),
 ]
 
 # (role_id, department, name, responsibility, escalation_to)
@@ -78,7 +80,13 @@ ROLES: list[tuple[str, str, str, str, str]] = [
     ("exec.chief_macro_officer", "executive", "Chief Macro Officer", "Cross-market macro regime oversight.", "cio"),
     ("exec.committee_coordinator", "executive", "Investment Committee Coordinator", "Advisory memos, ranking, dissent.", "cio"),
     ("exec.cio_liaison", "executive", "CIO Liaison", "Delivers recommendations to the human CIO.", "cio"),
+    # Research (3) — learn and recommend only
+    ("research.psychology", "research", "Trading Psychology Researcher",
+     "Reads behavioral finance and trading psychology; writes learning notes and recommendations.", "research.director"),
+    ("research.philosophy", "research", "Trading Philosophy Researcher",
+     "Reads trading philosophies and strategy research; proposes ideas that fit MERIDIAN.", "research.director"),
+    ("research.director", "research", "Research Director", "Daily synthesis of what the department learned.", "cio"),
 ]
 
-assert len(DEPARTMENTS) == 9
-assert len(ROLES) == 52, len(ROLES)
+assert len(DEPARTMENTS) == 10
+assert len(ROLES) == 55, len(ROLES)

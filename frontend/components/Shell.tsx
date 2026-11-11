@@ -11,6 +11,7 @@ const NAV = [
   ["/risk/", "Risk Command"],
   ["/lab/", "Research Laboratory"],
   ["/archive/", "Decision Archive"],
+  ["/research/", "Learning Journal"],
 ];
 
 export default function Shell({ title, children }: { title: string; children: ReactNode }) {

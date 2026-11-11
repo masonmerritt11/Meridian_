@@ -380,3 +380,95 @@ class AuditLog(Base):
     details: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     prev_hash: Mapped[str] = mapped_column(String(64))
     hash: Mapped[str] = mapped_column(String(64))
+
+
+# ---------------------------------------------------------------- research department
+class ResearchTopic(Base):
+    __tablename__ = "research_topics"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    worker_id: Mapped[str] = mapped_column(String(96), index=True)
+    topic: Mapped[str] = mapped_column(Text)
+    origin: Mapped[str] = mapped_column(String(16))  # SEED | SUGGESTED | CIO
+    priority: Mapped[int] = mapped_column(Integer, default=100)
+    status: Mapped[str] = mapped_column(String(16), default="QUEUED")  # QUEUED | DONE | FAILED
+    created_at: Mapped[datetime] = _ts()
+    done_at: Mapped[datetime | None] = _ts(nullable=True, default=False)
+
+
+class ResearchNote(Base):
+    __tablename__ = "research_notes"
+    id: Mapped[uuid.UUID] = _uuid()
+    worker_id: Mapped[str] = mapped_column(String(96), index=True)
+    topic: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(Text)
+    summary: Mapped[str] = mapped_column(Text)
+    key_ideas: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    evidence_quality: Mapped[str] = mapped_column(Text, default="")
+    applies_to_meridian: Mapped[str] = mapped_column(Text, default="")
+    contrarian_angle: Mapped[str] = mapped_column(Text, default="")
+    sources: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    kind: Mapped[str] = mapped_column(String(16), default="NOTE")  # NOTE | SYNTHESIS
+    run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    cost_usd: Mapped[Decimal] = mapped_column(NUM, default=0)
+    created_at: Mapped[datetime] = _ts()
+
+
+class ResearchRecommendation(Base):
+    __tablename__ = "research_recommendations"
+    id: Mapped[uuid.UUID] = _uuid()
+    worker_id: Mapped[str] = mapped_column(String(96), index=True)
+    note_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("research_notes.id"), nullable=True)
+    title: Mapped[str] = mapped_column(Text)
+    proposal: Mapped[str] = mapped_column(Text)
+    rationale: Mapped[str] = mapped_column(Text)
+    component: Mapped[str] = mapped_column(String(32))
+    how_to_test: Mapped[str] = mapped_column(Text, default="")
+    confidence: Mapped[str] = mapped_column(String(8))
+    status: Mapped[str] = mapped_column(String(16), default="PROPOSED")  # PROPOSED | ACCEPTED | PARKED | REJECTED
+    cio_note: Mapped[str] = mapped_column(Text, default="")
+    decided_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    decided_at: Mapped[datetime | None] = _ts(nullable=True, default=False)
+    created_at: Mapped[datetime] = _ts()
+
+
+class LlmUsage(Base):
+    __tablename__ = "llm_usage"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    worker_id: Mapped[str] = mapped_column(String(96), index=True)
+    model: Mapped[str] = mapped_column(String(64))
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    web_searches: Mapped[int] = mapped_column(Integer, default=0)
+    web_fetches: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[Decimal] = mapped_column(NUM, default=0)
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = _ts()
+
+
+# ---------------------------------------------------------------- analysts
+class AnalystAssessment(Base):
+    __tablename__ = "analyst_assessments"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    worker_id: Mapped[str] = mapped_column(String(96), index=True)
+    subject: Mapped[str] = mapped_column(String(32), index=True)  # asset, MARKET, PORTFOLIO, SYSTEM
+    label: Mapped[str] = mapped_column(String(48))
+    score: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)  # -1..1 directional bias (+ bullish)
+    confidence: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)  # 0..1
+    summary: Mapped[str] = mapped_column(Text)
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    data_source: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = _ts()
+
+
+class RecommendationOutcome(Base):
+    __tablename__ = "recommendation_outcomes"
+    memo_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("committee_memos.id"), primary_key=True)
+    case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    asset: Mapped[str] = mapped_column(String(16))
+    direction: Mapped[str] = mapped_column(String(8))
+    outcome: Mapped[str] = mapped_column(String(16))  # OPEN | TARGET_FIRST | STOP_FIRST | EXPIRED_FLAT
+    r_multiple: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    bars_observed: Mapped[int] = mapped_column(Integer, default=0)
+    resolved_at: Mapped[datetime | None] = _ts(nullable=True, default=False)
+    updated_at: Mapped[datetime] = _ts()

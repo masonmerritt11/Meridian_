@@ -8,6 +8,7 @@ import { ago, fmtTime, post, usd, usePoll } from "@/lib/api";
 export default function Overview() {
   const { data, error, reload } = usePoll<any>("/overview", 10000);
   const plan = usePoll<any>("/portfolio/plan", 15000);
+  const brief = usePoll<any>("/brief", 60000);
   const pt = plan.data?.totals;
   const [running, setRunning] = useState(false);
   const [demoMsg, setDemoMsg] = useState<string | null>(null);
@@ -33,6 +34,10 @@ export default function Overview() {
       </div>
 
       <div className="grid">
+        {brief.data?.summary && (
+          <Card title="Your brief" span={12} right={<span className="notice">CIO Liaison · {brief.data.created_at ? new Date(brief.data.created_at).toLocaleTimeString() : ""}</span>}>
+            <ul className="list brief">{(brief.data.data?.lines ?? [brief.data.summary]).map((l: string, i: number) => <li key={i}>{l}</li>)}</ul>
+          </Card>)}
         <Card title="Allocation plan: today's best ideas within your limits" span={12}
           right={pt && <span className="notice">capital {usd(Number(pt.open_capital_usd) + Number(pt.planned_capital_usd))} of {usd(pt.capital_limit_usd)} · idle {usd(pt.idle_capital_usd)} · new risk {usd(pt.planned_risk_usd)}</span>}>
           {pt && <div style={{ marginBottom: 8 }}><Meter value={Number(pt.open_capital_usd) + Number(pt.planned_capital_usd)} max={Number(pt.capital_limit_usd)} /></div>}

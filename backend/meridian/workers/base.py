@@ -79,6 +79,7 @@ class WorkerContext:
 
 class BaseWorker:
     spec: ClassVar[WorkerSpec]
+    slow: ClassVar[bool] = False  # long-running (language model) workers get their own scheduler thread
 
     def __init__(self, ctx: WorkerContext):
         self.ctx = ctx
