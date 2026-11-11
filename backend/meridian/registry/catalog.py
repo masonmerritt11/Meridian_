@@ -1,4 +1,4 @@
-"""The full MERIDIAN organisation: 9 departments, 52 logical roles.
+"""The full MERIDIAN organization: 9 departments, 52 logical roles.
 Roles with an implementing worker class are registered ACTIVE; the rest are PLANNED (defined, not running).
 PLANNED roles are never shown as healthy or producing output."""
 from __future__ import annotations

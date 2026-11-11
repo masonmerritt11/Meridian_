@@ -8,9 +8,16 @@ const TONE: Record<string, string> = {
   PLANNED: "muted", SUCCEEDED: "ok", RELAYED: "ok", MATCH: "ok", FAILED: "bad", MISMATCH: "bad", OUTBOX: "warn", RUNNING: "info", PENDING: "muted", INACTIVE: "muted", CLOSED: "muted", EXPIRED: "muted", INVALIDATED: "muted", SIMULATED: "sim",
 };
 
+/** Machine codes (RISK_REVIEW) shown as readable words (RISK REVIEW); the raw code stays in the tooltip. */
+export const human = (code: string) => code.replace(/_/g, " ");
+
+export function Code({ c }: { c: string }) {
+  return <span className="code" title={c}>{human(c)}</span>;
+}
+
 export function Badge({ v, title }: { v?: string | null; title?: string }) {
   if (!v) return <span className="badge muted">—</span>;
-  return <span className={`badge ${TONE[v] ?? "info"}`} title={title}>{v}</span>;
+  return <span className={`badge ${TONE[v] ?? "info"}`} title={title ?? v}>{human(v)}</span>;
 }
 
 export function Card({ title, right, children, span }: { title: string; right?: ReactNode; children: ReactNode; span?: number }) {

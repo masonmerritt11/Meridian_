@@ -1,4 +1,4 @@
-"""End-to-end demonstration on SIMULATED data (clearly labelled). Runs the full pipeline synchronously:
+"""End-to-end demonstration on SIMULATED data (clearly labeled). Runs the full pipeline synchronously:
 discovery -> ingest -> trend -> case -> macro -> challenge -> risk -> committee memo."""
 from __future__ import annotations
 

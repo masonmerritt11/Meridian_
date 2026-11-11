@@ -8,7 +8,7 @@ This is not production-ready for real-money decisions until the items marked **m
 * **Futures margin is not available from the public API.** Until you enter `margin_per_contract`, futures ideas are RESTRICT: MARGIN_UNVERIFIED and capital-usage checks cannot be enforced (the 10× gross-notional ceiling still is).
 * **Macro calendar** uses the free, unofficial Fair Economy (ForexFactory) weekly JSON feed. It covers the current week only and has no "actual" values. It was also unreachable from the build environment, so it has been tested only against parsed fixtures. When unavailable, the system shows UNAVAILABLE and risk RESTRICTs; nothing is invented. A second, official source (Fed/BLS/BEA calendars) is a planned improvement.
 * **Simulated data** is a deterministic random walk with a scripted breakout scenario for the demo. Contract specs on SIM- instruments are illustrative round numbers, not exchange specifications.
-* Candles are hourly only. The trend strategy is a single, unoptimised rule set that has **not been backtested**. Its signals are research inputs, not a validated edge.
+* Candles are hourly only. The trend strategy is a single, unoptimized rule set that has **not been backtested**. Its signals are research inputs, not a validated edge.
 
 ## Risk and portfolio
 * Equity = recorded capital + realized P&L from positions you record. MERIDIAN does not see your broker account, so unrecorded trades, fees and funding are invisible to it.

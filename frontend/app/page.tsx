@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import Shell from "@/components/Shell";
-import { Badge, Card, Empty, ErrorNote, Meter, Stat } from "@/components/ui";
+import { Badge, Code, Card, Empty, ErrorNote, Meter, Stat } from "@/components/ui";
 import { ago, fmtTime, post, usd, usePoll } from "@/lib/api";
 
 export default function Overview() {
@@ -78,7 +78,7 @@ export default function Overview() {
                 <tr key={p.id}>
                   <td><Badge v={p.direction} /> {p.quantity} × {p.instrument_id}<div className="notice">entry {p.entry_price} · stop {p.stop_price}</div></td>
                   <td><Badge v={p.advisory?.action ?? "PENDING"} /></td>
-                  <td><div className="codes">{(p.advisory?.reason_codes ?? []).map((c: string) => <span className="code" key={c}>{c}</span>)}</div>
+                  <td><div className="codes">{(p.advisory?.reason_codes ?? []).map((c: string) => <Code key={c} c={c} />)}</div>
                     <div className="notice">{p.advisory ? ago(p.advisory.created_at) : "awaiting first evaluation"}</div></td>
                 </tr>))}</tbody></table>)}
         </Card>
@@ -87,7 +87,7 @@ export default function Overview() {
           {!data?.alerts?.length ? <Empty>No active alerts.</Empty> : (
             <table><tbody>{data.alerts.map((a: any, i: number) => (
               <tr key={i}><td style={{ width: 120 }}>{fmtTime(a.ts)}</td><td><span className={`dot ${a.severity === "high" ? "bad" : "warn"}`} />{a.title}</td>
-                <td><div className="codes">{a.codes?.map((c: string) => <span className="code" key={c}>{c}</span>)}</div></td></tr>))}</tbody></table>)}
+                <td><div className="codes">{a.codes?.map((c: string) => <Code key={c} c={c} />)}</div></td></tr>))}</tbody></table>)}
         </Card>
 
         <Card title="Market-data freshness" span={5} right={<span className="notice">{data?.data_sources?.join(", ")}</span>}>

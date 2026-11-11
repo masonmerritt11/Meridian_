@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import Shell from "@/components/Shell";
-import { Badge, Card, Empty, ErrorNote } from "@/components/ui";
+import { Badge, Card, Empty, ErrorNote, human } from "@/components/ui";
 import { ago, fmtTime, num, usePoll } from "@/lib/api";
 
 const PIPELINE = ["DETECTED", "RESEARCHING", "CHALLENGED", "RISK_REVIEW", "COMMITTEE_REVIEW", "RECOMMENDED", "DEFERRED", "BLOCKED"];
@@ -39,7 +39,7 @@ export default function Radar() {
 
         <Card title="Research pipeline" span={7}>
           <div className="codes" style={{ marginBottom: 10 }}>
-            {PIPELINE.map((s) => <span className="code" key={s}>{s} {open.filter((c) => c.state === s).length}</span>)}
+            {PIPELINE.map((s) => <span className="code" key={s} title={s}>{human(s)} {open.filter((c) => c.state === s).length}</span>)}
           </div>
           {!open.length ? <Empty>No open research cases. The trend analyst opens one when a breakout aligns with trend.</Empty> : (
             <table><thead><tr><th>Opened</th><th>Case</th><th>State</th><th>Strength</th><th>Risk</th><th>Committee</th></tr></thead>

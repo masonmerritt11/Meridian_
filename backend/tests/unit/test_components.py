@@ -25,7 +25,7 @@ FIX = Path(__file__).resolve().parents[1] / "fixtures"
 NOW = datetime(2026, 11, 10, 15, 30, tzinfo=UTC)
 
 
-# ---------------------------------------------------------------- organisation
+# ---------------------------------------------------------------- organization
 def test_catalog_has_9_departments_52_roles():
     assert len(DEPARTMENTS) == 9 and len(ROLES) == 52
     counts = {}
@@ -146,7 +146,7 @@ def test_trend_detects_breakout_and_rounds_stops_to_tick():
     assert evaluate_trend(flat, Decimal("0.25"), TrendParams()).direction is None
 
 
-def test_simulated_provider_is_deterministic_and_labelled():
+def test_simulated_provider_is_deterministic_and_labeled():
     now = datetime(2026, 11, 10, 15, 10, tzinfo=UTC)
     p = SimulatedProvider(now=now)
     inst = next(i for i in p.discover() if i.asset == "GOLD")

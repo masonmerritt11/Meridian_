@@ -1,4 +1,4 @@
-"""SIMULATED market data. Deterministic, seeded, and labelled SIMULATED at every layer (instrument ids are
+"""SIMULATED market data. Deterministic, seeded, and labeled SIMULATED at every layer (instrument ids are
 prefixed SIM-, every row carries source=SIMULATED, the UI shows a banner). Contract specs below are
 illustrative round numbers, NOT exchange specifications. Never presented as live market information."""
 from __future__ import annotations

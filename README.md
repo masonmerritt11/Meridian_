@@ -1,6 +1,6 @@
 # MERIDIAN
 
-An auditable, advisory-only trading research platform. MERIDIAN watches **Gold, Silver, Crude Oil, Bitcoin, Ethereum and XRP**, runs research through specialised workers, applies deterministic risk controls, and issues committee memos to the human CIO, who alone decides and executes trades elsewhere. It then monitors positions the CIO records and advises **HOLD / EXIT / REVIEW**.
+An auditable, advisory-only trading research platform. MERIDIAN watches **Gold, Silver, Crude Oil, Bitcoin, Ethereum and XRP**, runs research through specialized workers, applies deterministic risk controls, and issues committee memos to the human CIO, who alone decides and executes trades elsewhere. It then monitors positions the CIO records and advises **HOLD / EXIT / REVIEW**.
 
 > **MERIDIAN contains no order-execution code.** The only outbound market client is GET-only and restricted to Coinbase's public `/market/*` endpoints; a test fails the build if order-related code appears.
 
@@ -12,7 +12,7 @@ An auditable, advisory-only trading research platform. MERIDIAN watches **Gold, 
 | Worker registry: 9 departments, 52 roles (11 implemented, 41 defined as PLANNED) | done |
 | Event bus: Postgres outbox + Redis Streams, idempotent consumers, retries, DLQ, expiry, replay | done |
 | Coinbase public market-data adapter (read-only, rate-limited, validated) | done, **not yet verified against the live API** (see limitations) |
-| Simulated provider (clearly labelled) for demo/testing | done |
+| Simulated provider (clearly labeled) for demo/testing | done |
 | Trend worker (EMA20/50 + Donchian-20 breakout, 2×ATR stop, 3×ATR target) | done |
 | Macro calendar worker (public weekly calendar feed; explicit UNAVAILABLE state) | done |
 | Research Officer challenge (higher timeframe, overextension, volatility shock) | done |

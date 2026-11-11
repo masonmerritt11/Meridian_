@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
-import { Badge, Card, Empty, ErrorNote, Sparkline } from "@/components/ui";
+import { Badge, Card, Empty, ErrorNote, Sparkline, human } from "@/components/ui";
 import { api, fmtTime, post, usd, usePoll } from "@/lib/api";
 
 function CaseDetail({ id }: { id: string }) {
@@ -71,7 +71,7 @@ function CaseDetail({ id }: { id: string }) {
               <button onClick={async () => setRecon(await api(`/memos/${memo.id}/reconstruct`))}>Reconstruct from inputs</button>
               {recon && <span><Badge v={recon.reconstructed ? "MATCH" : "MISMATCH"} title="reconstruction" /> {recon.checks.filter((x: any) => x.match).length}/{recon.checks.length} layers match</span>}
             </div>
-            {recon && <table style={{ marginTop: 6 }}><tbody>{recon.checks.map((x: any) => <tr key={x.layer}><td className="mono">{x.layer}</td><td><Badge v={x.match ? "MATCH" : "MISMATCH"} /></td></tr>)}</tbody></table>}
+            {recon && <table style={{ marginTop: 6 }}><tbody>{recon.checks.map((x: any) => <tr key={x.layer}><td className="mono">{human(x.layer)}</td><td><Badge v={x.match ? "MATCH" : "MISMATCH"} /></td></tr>)}</tbody></table>}
           </div>)}
       </Card>
 
@@ -106,7 +106,7 @@ function CaseDetail({ id }: { id: string }) {
         {!risk ? <Empty>Not yet reviewed by risk.</Empty> : (
           <table><thead><tr><th>Check</th><th>Result</th><th>Code</th><th>Detail</th></tr></thead>
             <tbody>{risk.checks.map((k: any, i: number) => (
-              <tr key={i}><td className="mono">{k.check}</td><td><Badge v={k.outcome} /></td><td className="mono">{k.code}</td><td>{k.detail}</td></tr>))}</tbody></table>)}
+              <tr key={i}><td className="mono" title={k.check}>{human(k.check)}</td><td><Badge v={k.outcome} /></td><td className="mono" title={k.code}>{human(k.code)}</td><td>{k.detail}</td></tr>))}</tbody></table>)}
       </Card>
 
       <Card title="Evidence" span={5}>

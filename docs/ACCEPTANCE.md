@@ -12,7 +12,7 @@ Run: `cd backend && pytest -q`, which gives **58 passed** (48 unit, 10 integrati
 | AT6 | Risk config needs CIO + re-auth; versioned and audited | `test_risk_config_change_requires_reauth_and_is_audited` |
 | AT7 | Recommendation reconstructs from stored inputs | `test_end_to_end_vertical_slice` (6/6 layers match) |
 | AT8 | Worker failure retried, recorded, escalated; inactive workers pause durably | `test_worker_failure_is_retried_recorded_and_escalated`, `test_inactive_worker_does_not_consume` |
-| AT9 | Simulated data always labelled | SIM- ids, `source=SIMULATED` on rows/memos, UI banner, `test_simulated_provider_is_deterministic_and_labelled` |
+| AT9 | Simulated data always labeled | SIM- ids, `source=SIMULATED` on rows/memos, UI banner, `test_simulated_provider_is_deterministic_and_labeled` |
 | AT10 | 10% max loss per trade and across open positions | `test_clean_trade_allows_and_sizes_to_10pct`, `test_one_contract_over_10pct_blocks`, `test_total_open_risk_*`, e2e re-review assertion |
 | AT11 | HOLD/EXIT advisories | `test_position_monitor`, `test_positions_and_monitor_exit_on_stop` |
 | AT12 | Audit tampering detected | `test_audit_chain_detects_tampering` |

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Shell from "@/components/Shell";
-import { Badge, Card, Empty, ErrorNote, Meter, Stat } from "@/components/ui";
+import { Badge, Code, Card, Empty, ErrorNote, Meter, Stat } from "@/components/ui";
 import { fmtTime, post, usd, usePoll } from "@/lib/api";
 
 function PositionRow({ p, onDone }: { p: any; onDone: () => void }) {
@@ -15,7 +15,7 @@ function PositionRow({ p, onDone }: { p: any; onDone: () => void }) {
         <td className="num">{p.entry_price}</td><td className="num">{p.stop_price}</td><td className="num">{p.target_price ?? "—"}</td>
         <td className="num">{usd(p.risk_usd)}</td>
         <td className="num">{p.advisory?.detail?.last_price ?? "—"}<div className="notice">{usd(p.advisory?.detail?.unrealized_pnl_usd)}</div></td>
-        <td><Badge v={p.advisory?.action ?? "PENDING"} /><div className="codes" style={{ marginTop: 4 }}>{(p.advisory?.reason_codes ?? []).map((c: string) => <span className="code" key={c}>{c}</span>)}</div>
+        <td><Badge v={p.advisory?.action ?? "PENDING"} /><div className="codes" style={{ marginTop: 4 }}>{(p.advisory?.reason_codes ?? []).map((c: string) => <Code key={c} c={c} />)}</div>
           {p.advisory?.detail?.note && <div className="notice">{p.advisory.detail.note}</div>}</td>
         <td style={{ whiteSpace: "nowrap" }}><button onClick={() => setMode(mode === "stop" ? "" : "stop")}>Stop moved</button> <button className="danger" onClick={() => setMode(mode === "close" ? "" : "close")}>I exited</button></td>
       </tr>
@@ -80,7 +80,7 @@ export default function RiskCommand() {
           {!alerts.data?.length ? <Empty>No alerts.</Empty> : (
             <table><tbody>{alerts.data.map((a, i) => (
               <tr key={i}><td style={{ width: 110 }}>{fmtTime(a.ts)}</td><td><span className={`dot ${a.severity === "high" ? "bad" : "warn"}`} />{a.title}</td>
-                <td><div className="codes">{a.codes?.map((c: string) => <span className="code" key={c}>{c}</span>)}</div></td></tr>))}</tbody></table>)}
+                <td><div className="codes">{a.codes?.map((c: string) => <Code key={c} c={c} />)}</div></td></tr>))}</tbody></table>)}
         </Card>
 
         <Card title="Recent risk decisions" span={6}>
@@ -89,7 +89,7 @@ export default function RiskCommand() {
               <tbody>{decisions.data.map((d) => (
                 <tr key={d.id} className="click" onClick={() => d.case_id && (location.href = `/lab/?id=${d.case_id}`)}>
                   <td>{fmtTime(d.created_at)}</td><td><Badge v={d.outcome} /></td><td className="num">{d.sizing?.suggested_quantity} <span className="notice">{usd(d.sizing?.max_loss_usd)}</span></td>
-                  <td><div className="codes">{d.reason_codes.map((c: string) => <span className="code" key={c}>{c}</span>)}</div></td></tr>))}</tbody></table>)}
+                  <td><div className="codes">{d.reason_codes.map((c: string) => <Code key={c} c={c} />)}</div></td></tr>))}</tbody></table>)}
         </Card>
 
         <Card title={`Risk configuration · v${active?.version ?? "?"}`} span={7}>

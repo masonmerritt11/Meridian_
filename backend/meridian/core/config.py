@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     cio_username: str | None = Field(None, alias="CIO_USERNAME")
     cio_password: str | None = Field(None, alias="CIO_PASSWORD")
 
-    # "simulated" uses the clearly-labelled simulated provider; "coinbase" uses the public read-only API.
+    # "simulated" uses the clearly-labeled simulated provider; "coinbase" uses the public read-only API.
     market_data_mode: Literal["simulated", "coinbase"] = Field("simulated", alias="MARKET_DATA_MODE")
     product_overrides: str = Field("", alias="MERIDIAN_PRODUCT_OVERRIDES")  # JSON {"GOLD": "GOL-..."}
     candle_granularity: str = Field("ONE_HOUR", alias="CANDLE_GRANULARITY")

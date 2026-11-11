@@ -18,7 +18,7 @@ export default function Operations() {
     <Shell title="Department Operations">
       <ErrorNote error={depts.error} />
       <div className="grid">
-        <Card title="Organisation — 9 departments, 52 roles" span={12} right={<span className="notice">Roles marked PLANNED are defined but have no implementation yet.</span>}>
+        <Card title="Organization — 9 departments, 52 roles" span={12} right={<span className="notice">Roles marked PLANNED are defined but have no implementation yet.</span>}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 12 }}>
             {(depts.data ?? []).map((d) => (
               <div className="dept" key={d.id}>
