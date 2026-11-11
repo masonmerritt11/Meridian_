@@ -76,7 +76,7 @@ class KalshiPublicClient:
                 time.sleep(min(float(r.headers.get("Retry-After", 2 ** attempt)), 10))
                 continue
             if r.status_code != 200:
-                raise ProviderUnavailable(f"HTTP {r.status_code} from {full}: {r.text[:200]}")
+                raise ProviderUnavailable(f"HTTP {r.status_code} from {full}: {r.text[:400]}")
             return r.json()
         raise ProviderUnavailable(f"kalshi unavailable after retries: {last!r}")
 

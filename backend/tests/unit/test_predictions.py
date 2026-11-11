@@ -105,3 +105,15 @@ def test_lab_walk_forward_and_studies():
     assert pb["test"]["n"] > 30 and pb["proven"]
     assert bt.underdog_bounce(ws)["reached_50c_rate"] == pytest.approx(266 / 400, abs=0.01)
     assert bt.late_flips(ws) and bt.calibration(ws)
+
+
+def test_candle_batches_respect_kalshi_cap():
+    from meridian.predictions.kalshi import MarketQuote
+    from meridian.predictions.workers import MAX_CANDLES_PER_REQUEST, candle_chunks
+    qs = [MarketQuote(f"T{i}", None, T0 + timedelta(minutes=15 * i), T0 + timedelta(minutes=15 * i + 15), None, None, None,
+                      None, "", "yes", None) for i in range(2880)]
+    chunks = candle_chunks(qs)
+    assert sum(len(c) for c in chunks) == 2880 and len(chunks) < 200
+    for c in chunks:
+        span = (c[-1].close_time - c[0].open_time).total_seconds() / 60 + 1
+        assert len(c) * span <= MAX_CANDLES_PER_REQUEST

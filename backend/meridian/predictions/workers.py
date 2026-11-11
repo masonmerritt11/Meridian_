@@ -27,6 +27,26 @@ def services(ctx: WorkerContext) -> tuple[KalshiMarkets | None, BtcSource | None
     return k, b
 
 
+MAX_CANDLES_PER_REQUEST = 9000  # Kalshi caps a batch at 10,000 candlesticks: tickers x minutes in the requested span
+
+
+def candle_chunks(quotes: list[MarketQuote]) -> list[list[MarketQuote]]:
+    """Group time-ordered windows so (number of tickers) x (minutes spanned) stays under Kalshi's batch cap."""
+    out: list[list[MarketQuote]] = []
+    cur: list[MarketQuote] = []
+    for q in quotes:
+        trial = cur + [q]
+        span = (max(x.close_time for x in trial) - min(x.open_time for x in trial)).total_seconds() / 60 + 1  # type: ignore[operator]
+        if cur and (len(trial) > 100 or len(trial) * span > MAX_CANDLES_PER_REQUEST):
+            out.append(cur)
+            cur = [q]
+        else:
+            cur = trial
+    if cur:
+        out.append(cur)
+    return out
+
+
 class HistorianOutput(WorkerOutput):
     status: str = "OK"
     windows_listed: int = 0
@@ -40,7 +60,7 @@ class PmHistorian(BaseWorker):
                       responsibility="Backfills settled 15-minute windows (1-minute odds bars and outcomes) and BTC minutes.",
                       version="1.0.0", output_model=HistorianOutput, schedule_seconds=30 * 60, max_retries=1,
                       escalation_to="pm.strategy_lab",
-                      default_config={"max_live_batches": 15, "max_historical_calls": 250, "tick_retention_days": 3})
+                      default_config={"max_live_windows": 3500, "max_historical_calls": 250, "tick_retention_days": 3})
 
     def run(self, s: Session, rc: RunContext) -> HistorianOutput:
         km, btc = services(self.ctx)
@@ -70,10 +90,18 @@ class PmHistorian(BaseWorker):
                   for w in todo]
         recent = [q for q in quotes if not cutoff or (q.close_time and q.close_time >= cutoff)]
         old = [q for q in quotes if cutoff and q.close_time and q.close_time < cutoff]
-        loaded = 0
-        for i in range(0, min(len(recent), 100 * int(rc.config["max_live_batches"])), 100):
-            chunk = recent[i:i + 100]
-            for t, bars in km.batch_candles(chunk).items():
+        s.commit()  # keep the listing even if a candle request fails
+        loaded = failed = 0
+        for chunk in candle_chunks(sorted(recent, key=lambda q: q.open_time)[: int(rc.config["max_live_windows"])]):
+            try:
+                got = km.batch_candles(chunk)
+            except Exception as e:  # noqa: BLE001 — skip this batch, retry next run
+                failed += 1
+                self.log.warning("candle batch failed", extra={"first": chunk[0].ticker, "n": len(chunk), "error": repr(e)[:400]})
+                if failed >= 3:
+                    break
+                continue
+            for t, bars in got.items():
                 if bars:
                     save_bars(s, t, bars)
                     loaded += 1
