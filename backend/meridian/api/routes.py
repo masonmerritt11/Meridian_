@@ -475,6 +475,13 @@ def capital(body: CapitalBody, s: Session = Depends(get_db), p: Principal = Cio)
     return portfolio.snapshot(s)
 
 
+@router.get("/portfolio/plan")
+def portfolio_plan(s: Session = Depends(get_db), _: Principal = Read) -> dict[str, Any]:
+    """Ranked allocation of the account across live recommendations (advisory)."""
+    from meridian.portfolio.constructor import plan_from_db
+    return plan_from_db(s)
+
+
 @router.get("/portfolio")
 def portfolio_view(s: Session = Depends(get_db), _: Principal = Read) -> dict[str, Any]:
     ev = s.execute(select(CapitalEvent).order_by(desc(CapitalEvent.created_at))).scalars()

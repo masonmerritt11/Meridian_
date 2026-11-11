@@ -231,3 +231,11 @@ def test_event_schema_validation():
         make_event("order.placed", {}, producer="t")
     with pytest.raises(Exception):
         make_event("case.researched", {"state": "missing case id"}, producer="t")
+
+
+def test_margin_rate_takes_higher_of_intraday_overnight():
+    from meridian.marketdata.types import margin_rate
+    raw = {"future_product_details": {"intraday_margin_rate": {"long_margin_rate": "0.10", "short_margin_rate": "0.12"},
+                                      "overnight_margin_rate": {"long_margin_rate": "0.25", "short_margin_rate": "0.27"}}}
+    assert margin_rate(raw, "LONG") == Decimal("0.25") and margin_rate(raw, "SHORT") == Decimal("0.27")
+    assert margin_rate({}, "LONG") is None

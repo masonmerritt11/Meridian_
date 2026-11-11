@@ -80,6 +80,7 @@ class RiskInputs:
     realized_today: Decimal = Decimal(0)
     realized_week: Decimal = Decimal(0)
     atr_pct: Decimal | None = None
+    margin_rate: Decimal | None = None  # exchange-published, fraction of notional
 
     def to_json(self) -> dict[str, Any]:
         d = asdict(self)
@@ -216,12 +217,17 @@ def _size(inp: RiskInputs, cfg: dict[str, Any], add: Any, sizing: dict[str, Any]
     unknown_open = any(p.capital_used_usd is None for p in inp.open_positions)
     if inp.product_type == "FUTURE":
         m = (cfg.get("margin_per_contract") or {}).get(inp.asset)
-        if m in (None, ""):
-            add("OVERNIGHT_MARGIN", "RESTRICT", "MARGIN_UNVERIFIED",
-                "margin per contract not configured; confirm with broker before acting")
-            per_unit_cap = None
-        else:
+        if m not in (None, ""):
             per_unit_cap = _d(m)
+            add("OVERNIGHT_MARGIN", "ALLOW", "MARGIN_CIO_CONFIGURED", f"${_s(per_unit_cap)} per contract (CIO-entered)")
+        elif inp.margin_rate is not None and inp.entry and inp.contract_size:
+            per_unit_cap = (_d(inp.margin_rate) * _d(inp.entry) * _d(inp.contract_size)).quantize(Decimal("0.01"))
+            add("OVERNIGHT_MARGIN", "ALLOW", "MARGIN_FROM_EXCHANGE",
+                f"{_s(_d(inp.margin_rate) * 100)}% of notional = ${per_unit_cap} per contract")
+        else:
+            add("OVERNIGHT_MARGIN", "RESTRICT", "MARGIN_UNVERIFIED",
+                "exchange margin rate unavailable and none configured; confirm with broker before acting")
+            per_unit_cap = None
     else:
         per_unit_cap = _d(inp.entry) * _d(inp.contract_size)
     if per_unit_cap is not None:

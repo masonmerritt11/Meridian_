@@ -27,7 +27,7 @@ from meridian.db.models import (
     RiskDecision,
 )
 from meridian.marketdata import service as md
-from meridian.marketdata.types import ProviderUnavailable
+from meridian.marketdata.types import ProviderUnavailable, margin_rate
 from meridian.risk import service as risk_svc
 from meridian.risk.engine import relevant_events
 from meridian.risk.position_monitor import MonitorInputs, advise
@@ -63,6 +63,7 @@ class InstrumentDiscoveryWorker(BaseWorker):
         for r in rows:
             self.log.info(f"discovery {r.asset}: {r.id} status={r.status} type={r.product_type} "
                           f"contract_size={r.contract_size} tick={r.price_increment} expiry={r.contract_expiry} "
+                          f"margin_long={margin_rate(r.raw, 'LONG')} margin_short={margin_rate(r.raw, 'SHORT')} "
                           f"{r.status_detail}")
         act = [r.id for r in rows if r.status == "ACTIVE"]
         un = [f"{r.asset}:{r.id}:{r.status_detail}" for r in rows if r.status != "ACTIVE"]

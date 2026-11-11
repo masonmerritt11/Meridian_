@@ -155,3 +155,11 @@ def test_one_position_per_asset():
     assert r.outcome == "BLOCK" and "ASSET_POSITION_LIMIT" in r.reason_codes
     other = OpenPositionView("BTC", "crypto", "LONG", Decimal("10"), Decimal("0"))
     assert "ASSET_POSITION_LIMIT" not in evaluate(make(open_positions=[other])).reason_codes
+
+
+def test_exchange_margin_rate_used_when_not_configured():
+    r = evaluate(make(config=dict(DEFAULT_RISK_CONFIG), margin_rate=Decimal("0.2")))  # 20% of $3000 = $600/contract
+    assert any(c.code == "MARGIN_FROM_EXCHANGE" for c in r.checks)
+    assert "SIZE_REDUCED_EXPOSURE" in r.reason_codes  # risk allowed 2, capital allows 1
+    assert r.sizing["capital_per_unit_usd"] == "600" and r.sizing["suggested_quantity"] == "1"  # $700 capital fits one
+    assert "MARGIN_UNVERIFIED" not in r.reason_codes

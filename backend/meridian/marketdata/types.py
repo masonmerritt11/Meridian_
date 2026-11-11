@@ -100,3 +100,19 @@ class HistoricalDataProvider(Protocol):
     name: str
 
     def history(self, asset: str, granularity: str, start: datetime, end: datetime) -> list[CandleDTO]: ...
+
+
+def margin_rate(raw: dict[str, Any] | None, direction: str) -> Decimal | None:
+    """Exchange-published margin rate for a futures product (fraction of notional), using the higher of
+    the intraday and overnight rates so positions held overnight are never under-reserved."""
+    fpd = (raw or {}).get("future_product_details") or {}
+    key = "long_margin_rate" if direction == "LONG" else "short_margin_rate"
+    rates = []
+    for k in ("intraday_margin_rate", "overnight_margin_rate"):
+        v = (fpd.get(k) or {}).get(key) if isinstance(fpd.get(k), dict) else None
+        try:
+            if v not in (None, "") and Decimal(str(v)) > 0:
+                rates.append(Decimal(str(v)))
+        except Exception:  # noqa: BLE001
+            continue
+    return max(rates) if rates else None

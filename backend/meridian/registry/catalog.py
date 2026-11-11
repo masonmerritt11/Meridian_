@@ -53,7 +53,7 @@ ROLES: list[tuple[str, str, str, str, str]] = [
     ("vol.tail", "volatility", "Tail Risk Analyst", "Gap and tail-event risk.", "risk.chief_risk_officer"),
     ("vol.correlation", "volatility", "Correlation Analyst", "Rolling cross-asset correlation.", "risk.chief_risk_officer"),
     # Portfolio (5)
-    ("portfolio.constructor", "portfolio", "Portfolio Constructor", "Combines recommendations into a book.", "exec.committee_coordinator"),
+    ("portfolio.constructor", "portfolio", "Portfolio Constructor", "Ranks live recommendations and allocates the account (risk + capital limits).", "exec.committee_coordinator"),
     ("portfolio.sizer", "portfolio", "Position Sizer", "Risk-budget sizing proposals.", "risk.chief_risk_officer"),
     ("portfolio.correlation_budget", "portfolio", "Correlation Budgeter", "Correlated-exposure budgeting.", "risk.chief_risk_officer"),
     ("portfolio.attribution", "portfolio", "Performance Attribution Analyst", "Advisory track record and attribution.", "exec.chief_of_staff"),

@@ -153,7 +153,8 @@ def product_to_spec(asset: str, p: dict[str, Any]) -> InstrumentSpec:
                                    "price_increment", "base_increment", "base_min_size", "quote_currency_id")}
         | {"future_product_details": {k: fpd.get(k) for k in ("venue", "contract_code", "contract_expiry", "contract_size",
                                                               "contract_root_unit", "group_description",
-                                                              "contract_expiry_type", "contract_display_name")}},
+                                                              "contract_expiry_type", "contract_display_name",
+                                                              "intraday_margin_rate", "overnight_margin_rate")}},
     )
 
 

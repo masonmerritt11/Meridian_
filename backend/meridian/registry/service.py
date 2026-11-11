@@ -12,7 +12,8 @@ from meridian.db.models import Department, WorkerConfigVersion, WorkerDefinition
 from meridian.registry.catalog import DEPARTMENTS, ROLES
 from meridian.workers.base import BaseWorker
 
-INFRA_IMPLEMENTED = {"data.event_relay": "Runtime relay loop (no worker class)"}
+INFRA_IMPLEMENTED = {"data.event_relay": "Runtime relay loop (no worker class)",
+                     "portfolio.constructor": "Allocation plan computed on demand (GET /api/portfolio/plan)"}
 
 
 def seed_registry(s: Session, workers: list[type[BaseWorker]]) -> None:

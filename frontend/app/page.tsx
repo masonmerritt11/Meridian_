@@ -7,6 +7,8 @@ import { ago, fmtTime, post, usd, usePoll } from "@/lib/api";
 
 export default function Overview() {
   const { data, error, reload } = usePoll<any>("/overview", 10000);
+  const plan = usePoll<any>("/portfolio/plan", 15000);
+  const pt = plan.data?.totals;
   const [running, setRunning] = useState(false);
   const [demoMsg, setDemoMsg] = useState<string | null>(null);
   const pf = data?.portfolio;
@@ -31,6 +33,28 @@ export default function Overview() {
       </div>
 
       <div className="grid">
+        <Card title="Allocation plan: today's best ideas within your limits" span={12}
+          right={pt && <span className="notice">capital {usd(Number(pt.open_capital_usd) + Number(pt.planned_capital_usd))} of {usd(pt.capital_limit_usd)} · idle {usd(pt.idle_capital_usd)} · new risk {usd(pt.planned_risk_usd)}</span>}>
+          {pt && <div style={{ marginBottom: 8 }}><Meter value={Number(pt.open_capital_usd) + Number(pt.planned_capital_usd)} max={Number(pt.capital_limit_usd)} /></div>}
+          {!plan.data?.allocations?.length ? <Empty>No allocation right now: no live recommendation fits your limits. {plan.data?.idle_note}</Empty> : (
+            <table><thead><tr><th>#</th><th>Position</th><th>Contracts</th><th>Entry / Stop / Target</th><th>Risk at stop</th><th>Capital</th><th>Score</th><th>R:R</th><th>Notes</th><th /></tr></thead>
+              <tbody>{plan.data.allocations.map((a: any) => (
+                <tr key={a.case_id}>
+                  <td className="num">{a.rank}</td>
+                  <td><Badge v={a.direction} /> {a.asset} <span className="notice mono">{a.instrument_id}</span></td>
+                  <td className="num">{a.quantity}{a.reduced_from && <span className="notice"> (of {a.reduced_from})</span>}</td>
+                  <td className="num">{a.entry} / {a.stop} / {a.target}</td>
+                  <td className="num">{usd(a.risk_usd)}</td>
+                  <td className="num">{a.capital_usd ? usd(a.capital_usd) : <Badge v="UNKNOWN" title="margin unverified" />}</td>
+                  <td className="num">{Number(a.score).toFixed(1)}</td><td className="num">{a.reward_risk ?? "—"}</td>
+                  <td className="notice">{a.notes.join("; ")}</td>
+                  <td><Link href={`/lab/?id=${a.case_id}`}>Open</Link></td>
+                </tr>))}</tbody></table>)}
+          {!!plan.data?.skipped?.length && (
+            <div className="notice" style={{ marginTop: 8 }}>Not allocated: {plan.data.skipped.map((k: any) => `${k.asset} ${k.direction} (${k.reason.replace("_", " ").toLowerCase()})`).join(" · ")}</div>)}
+          <div className="notice" style={{ marginTop: 6 }}>Ranked by committee score, then reward:risk. This is a ranking heuristic, not a probability of profit.</div>
+        </Card>
+
         <Card title="Latest committee memos" span={7} right={<Link href="/archive/">Archive →</Link>}>
           {!data?.latest_memos?.length ? <Empty>No memos yet. They appear when a signal clears research, risk and committee.</Empty> : (
             <table><thead><tr><th>When</th><th>Recommendation</th><th>Instrument</th><th>Entry / Stop / Target</th><th>Qty</th><th>Max loss</th><th>Risk</th><th /></tr></thead>

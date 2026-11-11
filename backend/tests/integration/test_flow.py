@@ -68,7 +68,7 @@ def test_end_to_end_vertical_slice(clean_env):
     login(c)
 
     ov = c.get("/api/overview").json()
-    assert ov["simulated"] is True and ov["workers_implemented"] == 11 and ov["workers_total"] == 52
+    assert ov["simulated"] is True and ov["workers_implemented"] == 12 and ov["workers_total"] == 52
     assert any(f["dataset"] == "macro_calendar" and f["status"] == "FRESH" for f in ov["freshness"])
 
     cases = c.get("/api/cases").json()
@@ -89,6 +89,11 @@ def test_end_to_end_vertical_slice(clean_env):
     # reconstruction from stored inputs
     rec_report = c.get(f"/api/memos/{case['memos'][0]['id']}/reconstruct").json()
     assert rec_report["reconstructed"] is True, rec_report
+
+    # portfolio constructor ranks live recommendations and allocates within limits
+    plan = c.get("/api/portfolio/plan").json()
+    assert plan["allocations"] and all(Decimal(a["risk_usd"]) <= Decimal("70") for a in plan["allocations"])
+    assert sum(Decimal(a["risk_usd"]) for a in plan["allocations"]) <= Decimal("70")  # default 10% total cap
 
     # CIO decision
     r = c.post(f"/api/cases/{rec[0]['id']}/decision", json={"decision": "ACCEPT", "note": "taking it"})

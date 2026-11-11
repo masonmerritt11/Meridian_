@@ -14,7 +14,7 @@ from meridian.core.config import code_version
 from meridian.core.util import jsonable, sha256, utcnow
 from meridian.db.models import DataFreshness, Instrument, MacroEvent, ResearchCase, RiskConfig, RiskDecision
 from meridian.marketdata.service import latest_book
-from meridian.marketdata.types import ASSETS
+from meridian.marketdata.types import ASSETS, margin_rate
 from meridian.portfolio import service as portfolio
 from meridian.risk.engine import DEFAULT_RISK_CONFIG, RiskInputs, RiskResult, evaluate
 
@@ -90,6 +90,7 @@ def build_inputs(s: Session, *, instrument_id: str, direction: str, entry: Decim
         spread_bps=spread, macro_status=mstatus, macro_events=mevents,
         open_positions=portfolio.open_position_views(s, cfg.get("margin_per_contract") or {}),
         realized_today=portfolio.realized_pnl(s, day), realized_week=portfolio.realized_pnl(s, week), atr_pct=atr_pct,
+        margin_rate=margin_rate(inst.raw, direction) if inst and inst.product_type == "FUTURE" else None,
     )
 
 
@@ -133,7 +134,7 @@ def recompute(inputs: dict[str, Any]) -> RiskResult:
     if d.get("contract_expiry"):
         d["contract_expiry"] = datetime.fromisoformat(d["contract_expiry"])
     for k in ("equity", "contract_size", "size_increment", "min_size", "entry", "stop", "spread_bps",
-              "realized_today", "realized_week", "atr_pct"):
+              "realized_today", "realized_week", "atr_pct", "margin_rate"):
         if d.get(k) is not None:
             d[k] = Decimal(str(d[k]))
     d["open_positions"] = [OpenPositionView(asset=p["asset"], correlation_group=p["correlation_group"],

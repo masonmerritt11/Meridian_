@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from meridian.core.util import utcnow
 from meridian.db.models import CapitalEvent, Instrument, Position
-from meridian.marketdata.types import ASSETS
+from meridian.marketdata.types import ASSETS, margin_rate
 from meridian.risk.engine import OpenPositionView
 
 
@@ -59,7 +59,13 @@ def open_position_views(s: Session, margin_cfg: dict[str, Any]) -> list[OpenPosi
             cap: Decimal | None = p.quantity * p.entry_price * p.contract_size
         else:
             m = (margin_cfg or {}).get(asset)
-            cap = Decimal(str(m)) * p.quantity if m not in (None, "") else None
+            rate = margin_rate(inst.raw if inst else None, p.direction)
+            if m not in (None, ""):
+                cap = Decimal(str(m)) * p.quantity
+            elif rate is not None:
+                cap = rate * p.entry_price * p.contract_size * p.quantity
+            else:
+                cap = None
         out.append(OpenPositionView(asset=asset, correlation_group=group, direction=p.direction,
                                     risk_usd=position_risk(p), capital_used_usd=cap,
                                     notional_usd=p.quantity * p.entry_price * p.contract_size))
