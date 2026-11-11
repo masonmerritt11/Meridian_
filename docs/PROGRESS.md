@@ -11,7 +11,7 @@ Hard stops (left for Mason): risk-limit changes (need his password), new paid se
 | 2 Worker detail view | done |
 | 3 Research department + Learning Journal | done (deploying) |
 | 4 Activate remaining workers | done: 54 of 55 roles working (deploying) |
-| 5 Verify on Railway + report | in progress |
+| 5 Verify on Railway + report | done (research notes re-verified after the 00:00 UTC budget reset) |
 
 ## Decisions made without Mason
 - American spelling everywhere.
@@ -30,6 +30,10 @@ Hard stops (left for Mason): risk-limit changes (need his password), new paid se
   Fixed: tool-free repair call (~2 cents) turns any cut-off answer into the note; longer output limit; 1 full read per session;
   failed topics re-queued (migration 0004). Regression test added.
 - Demo scenario was time-of-day dependent (flaky test); now has a decisive breakout bar and is checked across 48 hours.
+
+## Verified live (2026-11-11 17:55 UTC)
+- All 5 AI macro analysts: web search working (27-29 sources each), views parsed, ~$0.11 per run.
+- Freshness 13/13 after retiring demo datasets; 0 failed runs; compliance self-check PASS; system HEALTHY.
 
 ## Needs Mason in the morning
 - Raise max_total_open_risk_pct (Risk Command, needs password) if you want several positions open at once.
