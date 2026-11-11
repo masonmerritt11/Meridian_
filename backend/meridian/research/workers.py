@@ -266,7 +266,7 @@ class ResearchDirector(BaseWorker):
     slow = True
     spec = WorkerSpec(id="research.director", department="research", name="Research Director",
                       responsibility="Daily synthesis of what the department learned; ranks open recommendations.",
-                      version="1.0.0", output_model=DirectorOutput, schedule_seconds=12 * 3600, max_retries=1,
+                      version="1.0.0", output_model=DirectorOutput, schedule_seconds=6 * 3600, max_retries=1,
                       escalation_to="cio")
 
     def __init__(self, ctx):  # noqa: ANN001

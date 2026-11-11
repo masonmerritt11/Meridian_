@@ -219,8 +219,9 @@ def _finish(worker: BaseWorker, run_id: uuid.UUID, status: str, attempts: int, r
         s.commit()
     finally:
         s.close()
-    worker.log.info("worker run finished", extra={"worker_id": worker.spec.id, "run_id": str(run_id),
-                                                  "status": status, "attempts": attempts})
+    summary = (getattr(out, "summary", "") or "")[:200] if out else (err or "").strip().splitlines()[-1:][0][:200] if err else ""
+    worker.log.info(f"worker run finished: {worker.spec.id} {status} - {summary}",
+                    extra={"worker_id": worker.spec.id, "run_id": str(run_id), "status": status, "attempts": attempts})
 
 
 def _escalate(worker: BaseWorker, run_id: uuid.UUID, corr: uuid.UUID, error: str) -> None:

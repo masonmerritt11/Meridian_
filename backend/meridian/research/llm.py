@@ -151,10 +151,13 @@ class LLMClient:
                 break
             result.cost_usd = self._cost(result.input_tokens, result.output_tokens, result.web_searches)
             self._record(s, worker_id, result, None)
+            log.info(f"llm call ok: {worker_id} ${result.cost_usd} in={result.input_tokens} out={result.output_tokens} "
+                     f"searches={result.web_searches} fetches={result.web_fetches} sources={len(result.retrieved)} web={result.used_web}")
             return result
         except Exception as e:  # noqa: BLE001
             result.cost_usd = self._cost(result.input_tokens, result.output_tokens, result.web_searches)
             self._record(s, worker_id, result, repr(e)[:500])
+            log.warning(f"llm call failed: {worker_id}: {e!r}"[:500])
             if isinstance(e, LLMUnavailable):
                 raise
             raise LLMUnavailable(repr(e)) from e
