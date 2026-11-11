@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from meridian.core import audit
 from meridian.core.util import utcnow
 from meridian.db.models import ResearchNote, ResearchRecommendation, ResearchTopic
-from meridian.research.llm import LLMClient, LLMUnavailable, extract_json, fetch_arxiv
+from meridian.research.llm import LLMClient, LLMUnavailable, complete_json, extract_json, fetch_arxiv
 from meridian.workers.base import BaseWorker, RunContext, WorkerOutput, WorkerSpec
 
 COMPONENTS = ("trend", "stat_arb", "macro", "volatility", "liquidity", "risk", "portfolio", "committee",
@@ -183,31 +183,37 @@ class ResearcherWorker(BaseWorker):
                                              .order_by(desc(ResearchNote.created_at)).limit(40)).scalars()]
         seen_urls = sorted({src.get("url") for lst in seen for src in lst if src.get("url")})[:60]
         prompt = (f"{self.mandate}\n\nTopic for this session: {topic.topic}\n\n"
-                  "Search for 2-4 strong sources on this topic and open the 1-2 most important with web_fetch (prefer HTML pages "
-                  "or abstracts over long PDFs). "
-                  "Then write your learning note.\n"
+                  "Search for 2-4 strong sources on this topic and open the single most important one with web_fetch "
+                  "(prefer an HTML article or abstract page over a long PDF). Keep your working notes brief: your final "
+                  "message must be the JSON note described below, and nothing after it.\n"
                   + (f"Already read (do not repeat): {seen_urls}\n" if seen_urls else "")
                   + "\n" + OUTPUT_SPEC)
         try:
-            res = self.llm.complete(s, worker_id=wid, system=SYSTEM_CONTEXT, prompt=prompt, max_tokens=3500,
-                                    web=True, max_searches=4, max_fetches=2, worker_cap=WORKER_CAPS.get(wid),
-                                    reserve=Decimal("0.40"))
-            if not res.used_web:  # account has no web tools: read arXiv abstracts instead
+            if LLMClient.web_tools_disabled:  # account has no web tools: read arXiv abstracts instead
                 papers = fetch_arxiv(topic.topic.split(":")[0][:120], max_results=4)
-                res = self.llm.complete(
-                    s, worker_id=wid, system=SYSTEM_CONTEXT, max_tokens=3000, worker_cap=WORKER_CAPS.get(wid),
+                obj, res = complete_json(
+                    self.llm, s, worker_id=wid, system=SYSTEM_CONTEXT, spec=OUTPUT_SPEC, max_tokens=6000,
+                    worker_cap=WORKER_CAPS.get(wid),
                     prompt=f"{self.mandate}\n\nTopic: {topic.topic}\n\nYou cannot browse. Learn from these paper abstracts "
                            f"(and only cite these):\n{papers}\n\n{OUTPUT_SPEC}")
                 res.retrieved = [{"url": p["url"], "title": p["title"], "fetched": "true"} for p in papers]
+            else:
+                obj, res = complete_json(self.llm, s, worker_id=wid, system=SYSTEM_CONTEXT, prompt=prompt, spec=OUTPUT_SPEC,
+                                         max_tokens=6000, web=True, max_searches=3, max_fetches=1,
+                                         worker_cap=WORKER_CAPS.get(wid), reserve=Decimal("0.35"))
         except LLMUnavailable as e:
             rc.metrics["unavailable"] = 1
             return ResearchOutput(summary=f"UNAVAILABLE: {e}"[:300], status="UNAVAILABLE", topic=topic.topic)
+        except ValueError as e:  # even the repair produced no JSON
+            topic.status, topic.done_at = "FAILED", utcnow()
+            rc.metrics["parse_failed"] = 1
+            return ResearchOutput(summary=f"note could not be parsed: {e}"[:300], status="PARSE_FAILED", topic=topic.topic)
         try:
-            note = NoteModel.model_validate(extract_json(res.text))
-        except (ValueError, ValidationError) as e:
+            note = NoteModel.model_validate(obj)
+        except ValidationError as e:
             topic.status, topic.done_at = "FAILED", utcnow()  # do not pay to retry the same failure forever
             rc.metrics["parse_failed"] = 1
-            return ResearchOutput(summary=f"note could not be parsed: {e}"[:300], status="PARSE_FAILED",
+            return ResearchOutput(summary=f"note did not match the format: {e}"[:300], status="PARSE_FAILED",
                                   topic=topic.topic, cost_usd=str(res.cost_usd))
         sources = validate_sources(note.sources, res.retrieved)
         row = ResearchNote(worker_id=wid, topic=topic.topic, title=note.title[:300], summary=note.summary,
@@ -292,10 +298,10 @@ class ResearchDirector(BaseWorker):
                   '"contrarian_angle": "the most non-consensus insight today", '
                   '"top_recommendations": ["up to 3 titles from the open list, best first"]}')
         try:
-            res = self.llm.complete(s, worker_id=self.spec.id, system=SYSTEM_CONTEXT, prompt=prompt, max_tokens=2000,
-                                    worker_cap=WORKER_CAPS[self.spec.id], reserve=Decimal("0.05"))
-            out = extract_json(res.text)
-        except LLMUnavailable as e:
+            out, res = complete_json(self.llm, s, worker_id=self.spec.id, system=SYSTEM_CONTEXT, prompt=prompt,
+                                     spec="the JSON object described above", max_tokens=3000,
+                                     worker_cap=WORKER_CAPS[self.spec.id], reserve=Decimal("0.05"))
+        except (LLMUnavailable, ValueError) as e:
             return DirectorOutput(summary=f"UNAVAILABLE: {e}"[:300])
         s.add(ResearchNote(worker_id=self.spec.id, topic="daily synthesis", title=str(out.get("title", "Daily synthesis"))[:300],
                            summary=str(out.get("summary", "")), key_ideas=list(out.get("key_ideas", []))[:8],

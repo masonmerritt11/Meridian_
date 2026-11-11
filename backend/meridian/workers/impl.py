@@ -129,7 +129,8 @@ class FreshnessMonitorWorker(BaseWorker):
                       responsibility="Re-evaluate freshness of every dataset.", version="1.0.0", schedule_seconds=60)
 
     def run(self, s: Session, rc: RunContext) -> WorkerOutput:
-        rows = md.recheck_freshness(s, self.ctx.settings.candle_granularity)
+        rows = [r for r in md.recheck_freshness(s, self.ctx.settings.candle_granularity)
+                if r.status != "RETIRED" and not r.dataset.startswith("simulated:")]
         stale = [r.dataset for r in rows if r.status != "FRESH"]
         rc.metrics.update({"datasets": len(rows), "not_fresh": len(stale)})
         return WorkerOutput(summary=f"{len(rows) - len(stale)}/{len(rows)} fresh")

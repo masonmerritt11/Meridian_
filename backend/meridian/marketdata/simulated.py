@@ -81,9 +81,11 @@ class SimulatedProvider:
         if self.scenario == "demo" and asset in DEMO_OVERLAYS:
             span = 80
             k = min(h, last_h) - (last_h - span)
+            vol = SIM_SPECS[asset][1]
             if k > 0:
-                vol = SIM_SPECS[asset][1]
                 base *= math.exp(DEMO_OVERLAYS[asset] * vol * 0.9 * k)
+            if h >= last_h:  # decisive breakout bar so the scripted scenario never depends on random noise
+                base *= math.exp(DEMO_OVERLAYS[asset] * vol * 4)
         return base
 
     def candles(self, inst: InstrumentSpec, granularity: str, start: datetime, end: datetime) -> list[CandleDTO]:

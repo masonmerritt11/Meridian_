@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from meridian.analysts.base import AnalystOutput, AnalystWorker, Assessment, MarketContext
 from meridian.analysts.market import spec
-from meridian.research.llm import LLMClient, LLMUnavailable, extract_json
+from meridian.research.llm import LLMClient, LLMUnavailable, complete_json
 from meridian.workers.base import RunContext
 
 SYSTEM = """You are a macro analyst at MERIDIAN, an advisory-only research desk covering six futures: GOLD, SILVER, OIL (WTI crude),
@@ -43,10 +43,10 @@ class MacroLLMAnalyst(AnalystWorker):
 
     def analyze(self, s: Session, ctx: MarketContext, rc: RunContext) -> list[Assessment]:
         try:
-            res = self.llm.complete(s, worker_id=self.spec.id, system=SYSTEM, max_tokens=1800, web=True, max_searches=3,
-                                    max_fetches=0, worker_cap=Decimal("0.15"), reserve=Decimal("0.06"),
-                                    prompt=f"Your mandate: {self.mandate}\n\n{FORMAT}")
-            out = extract_json(res.text)
+            out, res = complete_json(self.llm, s, worker_id=self.spec.id, system=SYSTEM, spec=FORMAT, max_tokens=3000,
+                                     web=True, max_searches=3, max_fetches=0, worker_cap=Decimal("0.20"),
+                                     reserve=Decimal("0.06"),
+                                     prompt=f"Your mandate: {self.mandate}\nKeep working notes brief; end with the JSON.\n\n{FORMAT}")
         except (LLMUnavailable, ValueError) as e:
             rc.metrics["unavailable"] = 1
             return [Assessment("MARKET", "UNAVAILABLE", f"{self.spec.name} unavailable: {e}"[:300], None, None, {})]

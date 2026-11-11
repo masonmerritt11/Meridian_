@@ -109,7 +109,7 @@ def overview(request: Request, s: Session = Depends(get_db), _: Principal = Read
     health: dict[str, int] = {}
     for w in impl:
         health[w["health"]] = health.get(w["health"], 0) + 1
-    fresh = list(s.execute(select(DataFreshness).order_by(DataFreshness.dataset)).scalars())
+    fresh = list(s.execute(select(DataFreshness).where(DataFreshness.status != "RETIRED").order_by(DataFreshness.dataset)).scalars())
     memos = list(s.execute(select(CommitteeMemo).order_by(desc(CommitteeMemo.created_at)).limit(8)).scalars())
     positions = _positions(s, open_only=True)
     alerts = _alerts(s)
@@ -150,7 +150,7 @@ def _alerts(s: Session) -> list[dict[str, Any]]:
                        .order_by(desc(PositionAdvisory.created_at)).limit(20)).scalars():
         out.append(jsonable({"kind": "POSITION", "severity": "high" if a.action == "EXIT" else "medium", "ts": a.created_at,
                              "title": f"{a.action} advisory", "codes": a.reason_codes, "position_id": a.position_id}))
-    for f in s.execute(select(DataFreshness).where(DataFreshness.status != "FRESH")).scalars():
+    for f in s.execute(select(DataFreshness).where(DataFreshness.status.not_in(("FRESH", "RETIRED")))).scalars():
         out.append(jsonable({"kind": "DATA", "severity": "medium", "ts": f.last_checked, "title": f"{f.dataset} {f.status}",
                              "codes": [f.status], "detail": f.detail}))
     return sorted(out, key=lambda a: a["ts"] or "", reverse=True)

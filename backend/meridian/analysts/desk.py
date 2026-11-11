@@ -319,7 +319,7 @@ class AuditArchivist(AnalystWorker):
     def analyze(self, s, ctx, rc):  # noqa: ANN001, ANN201
         ok, bad = verify_chain(s)
         n = s.execute(select(func.count()).select_from(AuditLog)).scalar()
-        stale = s.execute(select(func.count()).select_from(DataFreshness).where(DataFreshness.status != "FRESH")).scalar()
+        stale = s.execute(select(func.count()).select_from(DataFreshness).where(DataFreshness.status.not_in(("FRESH", "RETIRED")))).scalar()
         return [Assessment("SYSTEM", "VERIFIED" if ok else "BROKEN",
                            f"Audit chain {'intact' if ok else f'BROKEN at entry {bad}'} across {n:,} entries; {stale} dataset(s) not fresh.",
                            None, 1.0, {"entries": n, "chain_ok": ok, "first_bad": bad})]

@@ -126,7 +126,12 @@ def latest_book(s: Session, instrument_id: str) -> BookSnapshot | None:
 def recheck_freshness(s: Session, granularity: str, now: datetime | None = None) -> list[DataFreshness]:
     now = now or utcnow()
     rows = list(s.execute(select(DataFreshness)).scalars())
+    active = {i.id for i in active_instruments(s)}
     for r in rows:
+        inst_id = r.dataset.split(":")[1] if r.dataset.startswith(("candles:", "book:")) else None
+        if inst_id is not None and inst_id not in active:
+            r.status, r.detail = "RETIRED", "instrument no longer in use"
+            continue
         if r.dataset.startswith("candles:") and r.status != "UNAVAILABLE":
             r.status = "FRESH" if is_fresh(r.last_data_ts, granularity, now) else "STALE"
             r.last_checked = now

@@ -11,7 +11,7 @@ Hard stops (left for Mason): risk-limit changes (need his password), new paid se
 | 2 Worker detail view | done |
 | 3 Research department + Learning Journal | done (deploying) |
 | 4 Activate remaining workers | done: 54 of 55 roles working (deploying) |
-| 5 Verify on Railway + report | pending |
+| 5 Verify on Railway + report | in progress |
 
 ## Decisions made without Mason
 - American spelling everywhere.
@@ -24,5 +24,12 @@ Hard stops (left for Mason): risk-limit changes (need his password), new paid se
 - Schedules persist across deploys (no re-run burst on each redeploy). LLM workers run on their own scheduler thread.
 - stat_arb.cross_venue stays PLANNED: needs other exchanges' price feeds (not available without new paid services).
 
+## Incidents
+- 2026-11-11 05:56-11:56 UTC: research sessions read real sources (27-28 per session) but answers hit the output-length limit
+  before the JSON note, so 6 sessions (about $2) produced no notes; each researcher then hit its $1.10 daily cap.
+  Fixed: tool-free repair call (~2 cents) turns any cut-off answer into the note; longer output limit; 1 full read per session;
+  failed topics re-queued (migration 0004). Regression test added.
+- Demo scenario was time-of-day dependent (flaky test); now has a decisive breakout bar and is checked across 48 hours.
+
 ## Needs Mason in the morning
-- (none yet)
+- Raise max_total_open_risk_pct (Risk Command, needs password) if you want several positions open at once.

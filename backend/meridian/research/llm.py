@@ -91,6 +91,40 @@ def extract_json(text: str) -> dict[str, Any]:
     raise ValueError("model answer contained no JSON object")
 
 
+REPAIR_PROMPT = """Your research session ran out of room before you wrote the final answer. Below is everything you wrote,
+followed by the sources you actually retrieved. Using ONLY that material, write the final answer now in the required format.
+Do not add facts or sources that are not in the material.
+
+Required format:
+{spec}
+
+Sources you retrieved:
+{sources}
+
+What you wrote:
+{text}"""
+
+
+def complete_json(llm: "LLMClient", s: Session, *, worker_id: str, system: str, prompt: str, spec: str,
+                  **kw: Any) -> tuple[dict[str, Any], "LLMResult"]:
+    """Run a (possibly tool-using) call and return its JSON. If the answer has no parseable JSON (for example it hit
+    the length limit), make one cheap tool-free repair call from the text already produced, so research is not lost."""
+    res = llm.complete(s, worker_id=worker_id, system=system, prompt=prompt, **kw)
+    try:
+        return extract_json(res.text), res
+    except ValueError:
+        pass
+    srcs = [{"url": r["url"], "title": r.get("title", "")} for r in res.retrieved][:40]
+    fix = llm.complete(s, worker_id=worker_id, system=system, max_tokens=3000, web=False, worker_cap=kw.get("worker_cap"),
+                       reserve=Decimal("0.05"),
+                       prompt=REPAIR_PROMPT.format(spec=spec, sources=json.dumps(srcs), text=res.text[-15000:] or "(nothing)"))
+    obj = extract_json(fix.text)  # raises ValueError if still unusable
+    res.text, res.cost_usd = fix.text, res.cost_usd + fix.cost_usd
+    res.input_tokens += fix.input_tokens
+    res.output_tokens += fix.output_tokens
+    return obj, res
+
+
 class LLMClient:
     web_tools_disabled = False  # flipped if the account rejects server tools
 

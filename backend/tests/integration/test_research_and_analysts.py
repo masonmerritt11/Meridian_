@@ -90,10 +90,10 @@ def test_researcher_learns_records_spend_and_drops_fabricated_sources(clean_env)
 
 def test_budget_cap_blocks_calls_and_failures_still_count(clean_env):
     calls: list = []
-    ctx = research_ctx(clean_env, anthropic_mock(calls), budget=0.50)
+    ctx = research_ctx(clean_env, anthropic_mock(calls), budget=0.45)
     w = PsychologyResearcher(ctx)
     assert execute(w).status == "OK"  # spends $0.13
-    assert execute(w).status == "UNAVAILABLE"  # next call would exceed $0.50 (reserve $0.40)
+    assert execute(w).status == "UNAVAILABLE"  # next call would exceed $0.45 (reserve $0.35)
     assert len(calls) == 1
     with session_scope() as s:
         with pytest.raises(BudgetExceeded):
@@ -131,3 +131,30 @@ def test_all_analysts_run_and_attach_evidence(clean_env):
     login(c)
     d = c.get("/api/workers/vol.regime/detail").json()
     assert d["worker"]["id"] == "vol.regime" and d["latest_outputs"] and d["stats"]["runs_24h"] >= 1
+
+
+def test_truncated_answer_is_repaired_not_wasted(clean_env):
+    """Reproduces the 2026-11-11 production bug: the research answer hit the length limit before its JSON."""
+    calls: list = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        body = json.loads(req.content)
+        calls.append(body)
+        if len(calls) == 1:
+            content = [{"type": "web_search_tool_result", "tool_use_id": "s1",
+                        "content": [{"type": "web_search_result", "url": "https://papers.ssrn.com/odean", "title": "Odean 1998"}]},
+                       {"type": "text", "text": "Long working notes about the disposition effect... (cut off"}]
+            return httpx.Response(200, json={"content": content, "stop_reason": "max_tokens",
+                                              "usage": {"input_tokens": 50_000, "output_tokens": 6000}})
+        assert "tools" not in body  # repair call is cheap and tool-free
+        assert "papers.ssrn.com/odean" in body["messages"][0]["content"]
+        return httpx.Response(200, json={"content": [{"type": "text", "text": "```json\n" + json.dumps(NOTE) + "\n```"}],
+                                          "stop_reason": "end_turn", "usage": {"input_tokens": 5_000, "output_tokens": 1_500}})
+
+    w = PsychologyResearcher(research_ctx(clean_env, httpx.MockTransport(handler)))
+    out = execute(w)
+    assert out.status == "OK" and len(calls) == 2
+    with session_scope() as s:
+        note = s.execute(select(ResearchNote)).scalar_one()
+        assert [x["url"] for x in note.sources] == ["https://papers.ssrn.com/odean"]
+        assert s.execute(select(func.count()).select_from(LlmUsage)).scalar() == 2
