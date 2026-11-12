@@ -60,13 +60,15 @@ export default function Overview() {
           <div className="notice" style={{ marginTop: 6 }}>Ranked by committee score, then reward:risk. This is a ranking heuristic, not a probability of profit.</div>
         </Card>
 
-        <Card title="Latest committee memos" span={7} right={<Link href="/archive/">Archive →</Link>}>
+        <Card title="Latest recommendations" span={7} right={<Link href="/archive/">Archive →</Link>}>
           {!data?.latest_memos?.length ? <Empty>No memos yet. They appear when a signal clears research, risk and committee.</Empty> : (
             <table><thead><tr><th>When</th><th>Recommendation</th><th>Instrument</th><th>Entry / Stop / Target</th><th>Qty</th><th>Max loss</th><th>Risk</th><th /></tr></thead>
               <tbody>{data.latest_memos.map((m: any) => (
-                <tr key={m.id}>
+                <tr key={m.id} style={m.recommendation === "RECOMMEND" && m.status !== "LIVE" ? { opacity: 0.55 } : undefined} title={m.status_note ?? ""}>
                   <td>{fmtTime(m.created_at)}</td>
-                  <td><Badge v={m.recommendation} /> {m.data_source === "SIMULATED" && <Badge v="SIMULATED" />}</td>
+                  <td>{m.recommendation === "RECOMMEND" && m.status && m.status !== "LIVE"
+                    ? <><Badge v={m.status} /> <span className="notice">{m.status === "MISSED" ? (m.status_note ?? "").replace("missed opportunity: ", "") : "no longer active"}</span></>
+                    : <Badge v={m.recommendation === "RECOMMEND" ? "LIVE" : m.recommendation} />} {m.data_source === "SIMULATED" && <Badge v="SIMULATED" />}</td>
                   <td><Badge v={m.trade?.direction} /> {m.trade?.instrument_id}</td>
                   <td className="num">{m.trade?.entry_reference} / {m.trade?.stop} / {m.trade?.target}</td>
                   <td className="num">{m.trade?.suggested_quantity}</td>

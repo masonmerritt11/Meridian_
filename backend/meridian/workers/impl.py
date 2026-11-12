@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from meridian.bus.schemas import CandlesIngestedV1, CaseEventV1, Envelope, RiskDecisionV1, SignalDetectedV1
 from meridian.cases import lifecycle as lc
+from meridian.cases.staleness import missed_reason
 from meridian.committee.logic import COMMITTEE_VERSION, decide
 from meridian.core import audit
 from meridian.core.config import code_version
@@ -232,7 +233,7 @@ class ChiefOfStaffWorker(BaseWorker):
     spec = WorkerSpec(id="exec.chief_of_staff", department="executive", name="Chief of Staff",
                       responsibility="Case intake, macro attachment, expiry sweeps.", version="1.0.0",
                       input_model=SignalDetectedV1, output_model=CaseOutput, subscribes=("signal.detected",),
-                      schedule_seconds=300, escalation_to="cio",
+                      schedule_seconds=120, escalation_to="cio",
                       default_config={"pipeline_timeout_hours": 24, "deferred_ttl_hours": 24})
 
     def handle(self, s: Session, env: Envelope, rc: RunContext) -> CaseOutput:
@@ -287,12 +288,34 @@ class ChiefOfStaffWorker(BaseWorker):
         self.emit(s, "case.researched", CaseEventV1(case_id=case.id, state=case.state), rc)
         return CaseOutput(summary="case created", case_id=str(case.id), state=case.state)
 
+    def _missed(self, s: Session, case: ResearchCase, now: datetime) -> tuple[str, str] | None:
+        """Has price already run past this recommendation (entry passed, target hit, or stop hit)?"""
+        h = case.hypothesis or {}
+        dec = lambda v: None if v in (None, "") else Decimal(str(v))  # noqa: E731
+        entry, stop, target = dec(h.get("entry_reference")), dec(h.get("stop")), dec(h.get("target"))
+        book = md.latest_book(s, case.instrument_id)
+        price = None
+        if book and book.best_bid is not None and book.best_ask is not None and now - book.ts < timedelta(minutes=20):
+            price = (book.best_bid + book.best_ask) / 2
+        rows = [r for r in md.load_candles(s, case.instrument_id, self.ctx.settings.candle_granularity, limit=48) if r.ts >= case.created_at]
+        if price is None and rows:
+            price = rows[-1].close
+        hi = max((r.high for r in rows), default=None)
+        lo = min((r.low for r in rows), default=None)
+        return missed_reason(case.direction, entry, stop, target, price, hi, lo)
+
     def run(self, s: Session, rc: RunContext) -> CaseOutput:
         now = utcnow()
         actor = f"{self.spec.id}@{self.spec.version}"
         n = 0
         for case in s.execute(select(ResearchCase).where(ResearchCase.state.in_(lc.OPEN_STATES))).scalars():
-            if case.expires_at and now >= case.expires_at and "EXPIRED" in lc.TRANSITIONS[case.state]:
+            missed = self._missed(s, case, now) if case.state == "RECOMMENDED" else None
+            if missed:
+                code, why = missed
+                lc.add_evidence(s, case, "MARKET", "OPPOSES", f"{code}: {why}", {"check": "still_actionable", "code": code}, actor)
+                lc.transition(s, case, "EXPIRED", f"missed opportunity: {why}", actor)
+                n += 1
+            elif case.expires_at and now >= case.expires_at and "EXPIRED" in lc.TRANSITIONS[case.state]:
                 lc.transition(s, case, "EXPIRED", "recommendation window elapsed without CIO action", actor)
                 n += 1
             elif case.state in ("DETECTED", "RESEARCHING", "CHALLENGED", "RISK_REVIEW") and \

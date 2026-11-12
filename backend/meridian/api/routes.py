@@ -125,7 +125,7 @@ def overview(request: Request, s: Session = Depends(get_db), _: Principal = Read
         "worker_health": health,
         "workers_total": len(reg), "workers_implemented": len(impl),
         "freshness": [_row(f, "dataset", "status", "last_data_ts", "last_checked", "source", "detail") for f in fresh],
-        "latest_memos": [_memo_summary(m) for m in memos],
+        "latest_memos": [_memo_summary(m, s) for m in memos],
         "open_positions": positions,
         "alerts": alerts[:20],
         "dlq_depth": s.execute(select(func.count()).select_from(DeadLetter).where(DeadLetter.resolved_at.is_(None))).scalar(),
@@ -133,8 +133,20 @@ def overview(request: Request, s: Session = Depends(get_db), _: Principal = Read
     }
 
 
-def _memo_summary(m: CommitteeMemo) -> dict[str, Any]:
+def _memo_summary(m: CommitteeMemo, s: Session | None = None) -> dict[str, Any]:
+    """Includes what happened to the case since the memo, so a stale recommendation is never shown as live."""
+    state = note = None
+    if s is not None:
+        case = s.get(ResearchCase, m.case_id)
+        state = case.state if case else None
+        if state and state != "RECOMMENDED":
+            t = s.execute(select(CaseTransition).where(CaseTransition.case_id == m.case_id)
+                          .order_by(desc(CaseTransition.id)).limit(1)).scalar()
+            note = t.reason if t else None
+    status = ("LIVE" if state == "RECOMMENDED" else
+              "MISSED" if note and note.startswith("missed opportunity") else state)
     return jsonable({"id": m.id, "case_id": m.case_id, "recommendation": m.recommendation, "score": m.score,
+                     "case_state": state, "status": status, "status_note": note,
                      "headline": m.memo.get("headline"), "trade": m.memo.get("trade"),
                      "risk": m.memo.get("risk"), "data_source": m.memo.get("data_source"), "created_at": m.created_at})
 

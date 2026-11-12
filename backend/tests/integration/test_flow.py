@@ -346,3 +346,26 @@ def test_blocked_asset_is_rereviewed_on_next_signal(clean_env):
         assert len(fresh) == len(replay) and all(c.state != "BLOCKED" for c in fresh), [c.state for c in fresh]
         decisions = list(s.execute(select(RiskDecision).where(RiskDecision.case_id.in_([c.id for c in fresh]))).scalars())
         assert decisions and all("EVENT_BLACKOUT" not in d.reason_codes for d in decisions)
+
+
+def test_recommendation_retired_when_price_runs_past_it(clean_env):
+    from meridian.db.models import BookSnapshot, ResearchCase
+    run_demo(clean_env, macro=FakeMacro())
+    with session_scope() as s:
+        recs = list(s.execute(select(ResearchCase).where(ResearchCase.state == "RECOMMENDED")).scalars())
+        assert recs
+        case = recs[0]
+        h = case.hypothesis
+        target = Decimal(str(h["target"]))
+        past = target * (Decimal("0.99") if case.direction == "SHORT" else Decimal("1.01"))
+        s.add(BookSnapshot(instrument_id=case.instrument_id, ts=datetime.now(UTC), best_bid=past, best_ask=past,
+                           spread_bps=Decimal(0), source="test"))
+        cid = case.id
+    ctx = make_context(clean_env, macro=FakeMacro())
+    rt = Runtime.build(clean_env, ctx)
+    rt.run_scheduled("exec.chief_of_staff")
+    with session_scope() as s:
+        c = s.get(ResearchCase, cid)
+        assert c.state == "EXPIRED"
+        others = [x.state for x in s.execute(select(ResearchCase).where(ResearchCase.id != cid)).scalars()]
+        assert "RECOMMENDED" in others or not others  # untouched cases keep their state

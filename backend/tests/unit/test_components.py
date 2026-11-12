@@ -239,3 +239,19 @@ def test_margin_rate_takes_higher_of_intraday_overnight():
                                       "overnight_margin_rate": {"long_margin_rate": "0.25", "short_margin_rate": "0.27"}}}
     assert margin_rate(raw, "LONG") == Decimal("0.25") and margin_rate(raw, "SHORT") == Decimal("0.27")
     assert margin_rate({}, "LONG") is None
+
+
+def test_missed_opportunity_rules():
+    from decimal import Decimal as D
+
+    from meridian.cases.staleness import missed_reason
+    # SHORT: entry 100, stop 104, target 92
+    assert missed_reason("SHORT", D(100), D(104), D(92), D(99)) is None
+    assert missed_reason("SHORT", D(100), D(104), D(92), D(95))[0] == "MISSED_ENTRY_PASSED"   # 62% of the way
+    assert missed_reason("SHORT", D(100), D(104), D(92), D(97), low=D(91.5))[0] == "MISSED_TARGET_REACHED"
+    assert missed_reason("SHORT", D(100), D(104), D(92), D(101), high=D(104.2))[0] == "STOP_HIT_BEFORE_ENTRY"
+    # LONG mirrored
+    assert missed_reason("LONG", D(100), D(96), D(108), D(101)) is None
+    assert missed_reason("LONG", D(100), D(96), D(108), D(105))[0] == "MISSED_ENTRY_PASSED"
+    assert missed_reason("LONG", D(100), D(96), D(108), D(102), high=D(108))[0] == "MISSED_TARGET_REACHED"
+    assert missed_reason("LONG", D(100), D(96), D(108), None) is None
