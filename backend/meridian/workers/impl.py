@@ -239,6 +239,14 @@ class ChiefOfStaffWorker(BaseWorker):
         sig = SignalDetectedV1.model_validate(env.payload)
         actor = f"{self.spec.id}@{self.spec.version}"
         existing = lc.open_case_for(s, sig.instrument_id)
+        if existing is not None and existing.state in ("BLOCKED", "DEFERRED"):
+            # A fresh signal gets a fresh review: risk conditions (event windows, open risk, capital) change during
+            # the day, so a block or deferral must not freeze the asset until the case times out.
+            lc.add_evidence(s, existing, "SIGNAL", "NEUTRAL", f"Superseded by a new {sig.direction} signal at {sig.as_of}",
+                            sig.model_dump(mode="json"), actor)
+            lc.transition(s, existing, "EXPIRED", f"superseded by new {sig.direction} signal; re-reviewing", actor, env)
+            s.flush()
+            existing = None
         if existing is not None:
             if existing.direction != sig.direction:
                 if "INVALIDATED" in lc.TRANSITIONS[existing.state]:
@@ -386,7 +394,10 @@ class RiskControlWorker(BaseWorker):
         self.emit(s, "risk.decision.recorded", RiskDecisionV1(case_id=case.id, risk_decision_id=dec.id,
                                                               outcome=dec.outcome, reason_codes=dec.reason_codes), rc)  # type: ignore[arg-type]
         rc.metrics["blocked"] = 1.0 if dec.outcome == "BLOCK" else 0.0
-        return RiskOutput(summary=f"risk {dec.outcome}", case_id=str(case.id), outcome=dec.outcome, reason_codes=dec.reason_codes)
+        blocking = [c.get("code") or c.get("reason_code") for c in (dec.checks or []) if isinstance(c, dict) and c.get("outcome") == dec.outcome] if dec.outcome != "ALLOW" else []
+        why = ", ".join(blocking or list(dec.reason_codes)[:6])
+        return RiskOutput(summary=f"risk {dec.outcome} {case.asset} {case.direction}" + (f": {why}" if why and dec.outcome != "ALLOW" else ""),
+                          case_id=str(case.id), outcome=dec.outcome, reason_codes=dec.reason_codes)
 
 
 # =============================================================== committee

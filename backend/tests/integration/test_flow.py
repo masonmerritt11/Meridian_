@@ -312,3 +312,37 @@ def test_positions_and_monitor_exit_on_stop(clean_env):
         adv = s.execute(select(PositionAdvisory)).scalars().all()
         assert adv[-1].action == "EXIT" and "STOP_BREACHED" in adv[-1].reason_codes
         assert s.execute(select(Position)).scalar_one().status == "OPEN"  # MERIDIAN never closes anything itself
+
+
+def test_blocked_asset_is_rereviewed_on_next_signal(clean_env):
+    """A BLOCK (e.g. during an event window) must not freeze the asset for the day: the next signal gets a fresh review."""
+    from meridian.db.models import ResearchCase
+    from meridian.marketdata.simulated import SimulatedProvider
+    from meridian.marketdata.service import demo_anchor
+    run_demo(clean_env, macro=FakeMacro([MacroEventDTO(
+        id="now", title="FOMC Statement", country="USD", impact="High", event_time=datetime.now(UTC) + timedelta(minutes=20),
+        time_confidence="EXACT", forecast=None, previous=None, source="t")]))
+    with session_scope() as s:
+        blocked = list(s.execute(select(ResearchCase).where(ResearchCase.state == "BLOCKED")).scalars())
+        assert blocked
+        replay = [(c.id, dict(c.hypothesis)) for c in blocked]
+        anchor = demo_anchor(s)
+    # the event has passed (move it 3 hours into the past); the same signals fire again
+    from meridian.db.models import MacroEvent
+    with session_scope() as s:
+        for e in s.execute(select(MacroEvent)).scalars():
+            e.event_time = datetime.now(UTC) - timedelta(hours=3)
+    ctx = make_context(clean_env, market=SimulatedProvider(scenario="demo", demo_end=anchor), macro=FakeMacro())
+    rt = Runtime.build(clean_env, ctx)
+    with session_scope() as s:
+        for _, h in replay:
+            payload = {k: v for k, v in h.items() if k not in ("statement", "signal_event_id")}
+            publish(s, make_event("signal.detected", payload, producer="test@1"))
+    rt.drain()
+    with session_scope() as s:
+        old = {cid: s.get(ResearchCase, cid).state for cid, _ in replay}
+        assert set(old.values()) == {"EXPIRED"}
+        fresh = list(s.execute(select(ResearchCase).where(ResearchCase.id.notin_(list(old)))).scalars())
+        assert len(fresh) == len(replay) and all(c.state != "BLOCKED" for c in fresh), [c.state for c in fresh]
+        decisions = list(s.execute(select(RiskDecision).where(RiskDecision.case_id.in_([c.id for c in fresh]))).scalars())
+        assert decisions and all("EVENT_BLACKOUT" not in d.reason_codes for d in decisions)
