@@ -91,3 +91,28 @@ def test_trade_tester_paper_tests_every_recommendation(clean_env):
     login(c)
     summ = c.get("/api/backtest/recommendations").json()
     assert set(summ["groups"]) == {"RECOMMEND", "BLOCKED", "REJECT", "DEFER"} and summ["rows"]
+
+
+def test_loader_skips_bad_markets_and_demo_instruments(clean_env):
+    from meridian.backtest.workers import products
+    from meridian.db.models import Instrument
+
+    class Flaky(FakeHourly):
+        def hourly(self, product, start, end):  # noqa: ANN001
+            if product == "ETH-USD":
+                raise RuntimeError("boom")
+            return super().hourly(product, start, end)
+
+    with session_scope() as s:
+        for iid, src in (("SIM-OIL", "SIMULATED"), ("NOL-19NOV26-CDE", "COINBASE")):
+            s.add(Instrument(id=iid, asset="OIL", venue="x", product_type="FUTURE", display_name=iid, quote_currency="USD",
+                             source=src, status="ACTIVE"))
+    with session_scope() as s:
+        ps = [p for _, p in products(s)]
+        assert "SIM-OIL" not in ps and "NOL-19NOV26-CDE" in ps
+        w = s.get(WorkerDefinition, "bt.historian")
+        w.config = {**w.config, "history_days": 20, "max_requests": 40}
+    ctx = make_context(clean_env, macro=FakeMacro())
+    ctx.services["bt_source"] = Flaky()
+    out = execute(BtHistorian(ctx), trigger="MANUAL")
+    assert out.bars_added > 0 and "ETH-USD" in out.summary

@@ -65,7 +65,8 @@ def _source(ctx: WorkerContext) -> CandleSource | None:
 def products(s: Session) -> list[tuple[str, str]]:
     out = [(a, p) for a, p in SPOT_PROXIES.items()]
     for i in s.execute(select(Instrument).where(Instrument.asset.in_(CONTRACT_ASSETS))).scalars():
-        out.append((i.asset, i.id))
+        if i.id.endswith("-CDE"):  # real Coinbase futures contracts only (never demo instruments)
+            out.append((i.asset, i.id))
     return out
 
 
@@ -108,31 +109,43 @@ class BtHistorian(BaseWorker):
         floor = now - timedelta(days=int(rc.config["history_days"]))
         budget, added, per = int(rc.config["max_requests"]), 0, {}
         step = timedelta(hours=340)
+        failed: dict[str, str] = {}
+        box = [budget]
         for asset, product in products(s):
-            lo, hi = s.execute(select(func.min(BtCandle.ts), func.max(BtCandle.ts)).where(BtCandle.product == product)).first()
             n0 = added
-            # forward: from the newest stored bar to now
-            cur = (hi + timedelta(hours=1)) if hi else now - step
-            while cur < now and budget > 0:
-                rows = src.hourly(product, cur, min(cur + step, now))
-                budget -= 1
-                added += self._save(s, asset, product, rows)
-                cur += step
-            # backward: older history until the floor or until the market has no older data
-            cur = lo or (now - step)
-            empty = 0
-            while cur > floor and budget > 0 and empty < 2:
-                rows = src.hourly(product, max(cur - step, floor), cur)
-                budget -= 1
-                got = self._save(s, asset, product, rows)
-                added += got
-                empty = empty + 1 if got == 0 else 0
-                cur -= step
+            try:
+                added += self._load(s, src, asset, product, now, floor, step, box)
+            except Exception as e:  # noqa: BLE001 — one market failing must not stop the others
+                s.rollback()
+                failed[product] = repr(e)[:200]
+                continue
             s.commit()
             per[product] = added - n0
-        rc.metrics.update({"bars_added": added, "by_product": per, "requests_left": budget})
+        budget = box[0]
+        rc.metrics.update({"bars_added": added, "by_product": per, "requests_left": budget, "failed": failed})
         total = s.execute(select(func.count()).select_from(BtCandle)).scalar()
-        return LoaderOutput(summary=f"{added} hourly bars added ({total} stored) across {len(per)} markets", bars_added=added)
+        return LoaderOutput(summary=f"{added} hourly bars added ({total} stored) across {len(per)} markets"
+                                    + (f"; skipped {', '.join(failed)}" if failed else ""), bars_added=added)
+
+    def _load(self, s: Session, src: CandleSource, asset: str, product: str, now: datetime, floor: datetime,
+              step: timedelta, budget: list[int]) -> int:
+        lo, hi = s.execute(select(func.min(BtCandle.ts), func.max(BtCandle.ts)).where(BtCandle.product == product)).first()
+        added = 0
+        cur = (hi + timedelta(hours=1)) if hi else now - step       # forward: newest stored bar -> now
+        while cur < now and budget[0] > 0:
+            rows = src.hourly(product, cur, min(cur + step, now))
+            budget[0] -= 1
+            added += self._save(s, asset, product, rows)
+            cur += step
+        cur, empty = lo or (now - step), 0                          # backward: until the floor or no older data
+        while cur > floor and budget[0] > 0 and empty < 2:
+            rows = src.hourly(product, max(cur - step, floor), cur)
+            budget[0] -= 1
+            got = self._save(s, asset, product, rows)
+            added += got
+            empty = empty + 1 if got == 0 else 0
+            cur -= step
+        return added
 
     @staticmethod
     def _save(s: Session, asset: str, product: str, rows: list[tuple[datetime, float, float, float, float]]) -> int:
