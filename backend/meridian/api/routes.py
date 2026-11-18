@@ -825,3 +825,78 @@ def predictions_research(s: Session = Depends(get_db), _: Principal = Read) -> d
                                   "from": rng[0] if rng else None, "to": rng[1] if rng else None,
                                   "backfill_days": st.pm_backfill_days},
                      "lab": ({"run_at": run.created_at, **run.result} if run else None), "paper_track_record": track})
+
+
+# ------------------------------------------------------------------ members (ownership of the account)
+class MemberBody(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    role: Literal["OWNER", "MEMBER"] = "MEMBER"
+    note: str = Field("", max_length=2000)
+
+
+class MemberPatch(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=120)
+    note: str | None = Field(None, max_length=2000)
+    active: bool | None = None
+
+
+class LedgerBody(BaseModel):
+    kind: Literal["CONTRIBUTION", "WITHDRAWAL"]
+    amount: Decimal = Field(gt=0)
+    original: bool = False
+    note: str = Field("", max_length=2000)
+
+
+@router.get("/members")
+def members_overview(s: Session = Depends(get_db), _: Principal = Read) -> dict[str, Any]:
+    from meridian.members import service as ms
+    return jsonable(ms.overview(s))
+
+
+@router.get("/members/{member_id}")
+def member_detail(member_id: uuid.UUID, s: Session = Depends(get_db), _: Principal = Read) -> dict[str, Any]:
+    from meridian.members import service as ms
+    try:
+        return jsonable(ms.detail(s, member_id))
+    except ms.MemberError as e:
+        raise HTTPException(404, str(e)) from e
+
+
+@router.post("/members")
+def member_create(body: MemberBody, s: Session = Depends(get_db), p: Principal = Cio) -> dict[str, Any]:
+    from meridian.db.models import Member
+    m = Member(name=body.name.strip(), role=body.role, note=body.note)
+    s.add(m)
+    s.flush()
+    audit.record(s, f"cio:{p.username}", "member.create", "member", m.id, jsonable(body.model_dump()))
+    s.commit()
+    return {"id": str(m.id)}
+
+
+@router.patch("/members/{member_id}")
+def member_update(member_id: uuid.UUID, body: MemberPatch, s: Session = Depends(get_db), p: Principal = Cio) -> dict[str, Any]:
+    from meridian.db.models import Member
+    m = s.get(Member, member_id)
+    if m is None:
+        raise HTTPException(404, "member not found")
+    changes = body.model_dump(exclude_none=True)
+    before = {k: getattr(m, k) for k in changes}
+    for k, v in changes.items():
+        setattr(m, k, v.strip() if isinstance(v, str) and k == "name" else v)
+    audit.record(s, f"cio:{p.username}", "member.update", "member", m.id, jsonable({"before": before, "after": changes}))
+    s.commit()
+    return {"ok": True}
+
+
+@router.post("/members/{member_id}/ledger")
+def member_ledger(member_id: uuid.UUID, body: LedgerBody, s: Session = Depends(get_db), p: Principal = Cio) -> dict[str, Any]:
+    from meridian.members import service as ms
+    try:
+        e = ms.record(s, member_id, body.kind, body.amount, body.original, body.note, p.username)
+    except ms.MemberError as err:
+        raise HTTPException(400, str(err)) from err
+    s.flush()
+    audit.record(s, f"cio:{p.username}", "member.ledger", "member", member_id,
+                 jsonable({**body.model_dump(), "units": e.units, "nav_per_unit": e.nav_per_unit}))
+    s.commit()
+    return jsonable({"id": e.id, "units": e.units, "nav_per_unit": e.nav_per_unit})

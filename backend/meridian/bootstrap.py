@@ -48,6 +48,10 @@ def bootstrap(settings: Settings, run_migrations: bool = True) -> None:
             amt = Decimal(os.environ.get("STARTING_CAPITAL", "700"))
             s.add(CapitalEvent(kind="DEPOSIT", amount=amt, note="initial capital", username="system"))
             audit.record(s, "system", "capital.deposit", "capital", "initial", {"amount": str(amt)})
+            s.flush()
+        from meridian.members.service import seed_founders
+        if seed_founders(s):
+            audit.record(s, "system", "member.seed", "member", "founders", {"Mason": "600", "Member 1": "100"})
         if settings.market_data_mode == "simulated":
             from datetime import UTC, datetime, timedelta
 

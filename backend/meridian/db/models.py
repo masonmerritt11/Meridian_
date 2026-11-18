@@ -549,3 +549,32 @@ class PmLabRun(Base):
     windows: Mapped[int] = mapped_column(Integer)
     result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = _ts()
+
+
+# ---------------------------------------------------------------- members (ownership of the account, unit accounting)
+class Member(Base):
+    __tablename__ = "members"
+    id: Mapped[uuid.UUID] = _uuid()
+    name: Mapped[str] = mapped_column(String(120))
+    role: Mapped[str] = mapped_column(String(16), default="MEMBER")  # OWNER | MEMBER
+    note: Mapped[str] = mapped_column(Text, default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = _ts()
+
+
+class MemberLedger(Base):
+    """Append-only. CONTRIBUTION issues units at the NAV per unit at that moment; WITHDRAWAL redeems them.
+    original=True marks money that was already part of the founding capital (units at $1.00, no new deposit)."""
+    __tablename__ = "member_ledger"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    member_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("members.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # CONTRIBUTION | WITHDRAWAL
+    amount: Mapped[Decimal] = mapped_column(NUM)   # positive dollars
+    units: Mapped[Decimal] = mapped_column(NUM)    # signed: + issued, - redeemed
+    nav_per_unit: Mapped[Decimal] = mapped_column(NUM)
+    equity_before: Mapped[Decimal] = mapped_column(NUM)
+    original: Mapped[bool] = mapped_column(Boolean, default=False)
+    note: Mapped[str] = mapped_column(Text, default="")
+    username: Mapped[str] = mapped_column(String(128))
+    effective_at: Mapped[datetime] = _ts()
+    created_at: Mapped[datetime] = _ts()

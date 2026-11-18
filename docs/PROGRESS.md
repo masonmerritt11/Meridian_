@@ -40,3 +40,9 @@ Hard stops (left for Mason): risk-limit changes (need his password), new paid se
 
 ## 2026-11-11 — Prediction Desk
 Added the Prediction Markets department (Kalshi 15-minute BTC): live 2-second desk, odds historian, strategy lab with walk-forward verification, hard exit-before-close rule (code + DB trigger), dashboard page with sound/browser alerts. See docs/PREDICTION_MARKETS.md. 87 tests passing.
+
+## 2026-11-18 — Members (ownership of the account)
+New Members tab: unit accounting (like a fund). Original $700 seeded as Mason $600 / Member 1 $100 (1/7) at $1.00 per
+unit; later money buys units at the current value per unit, withdrawals redeem them; each closed trade is split by
+ownership at the moment it closes. Per-person tabs: value, ownership, gain, value over time, history, share of each
+trade. Ledger is append-only (DB trigger). Money added/withdrawn here also updates account capital.
