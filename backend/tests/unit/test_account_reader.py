@@ -103,3 +103,12 @@ def test_secret_accepted_however_it_was_pasted():
     assert "incomplete" in str(e.value)
     assert "single-line" in secret_kind("not-a-key-at-all")
     assert normalize_secret(json.dumps({"privateKey": pem})).startswith("-----BEGIN")
+
+
+def test_pem_body_without_header_lines_is_accepted():
+    from meridian.brokerage.coinbase_account import _signing_key
+    k = ec.generate_private_key(ec.SECP256R1())
+    for fmt in (serialization.PrivateFormat.TraditionalOpenSSL, serialization.PrivateFormat.PKCS8):
+        pem = k.private_bytes(serialization.Encoding.PEM, fmt, serialization.NoEncryption()).decode()
+        body = "".join(line for line in pem.splitlines() if not line.startswith("-----"))
+        assert _signing_key(body)[1] == "ES256"

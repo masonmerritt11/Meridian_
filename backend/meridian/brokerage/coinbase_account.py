@@ -86,11 +86,17 @@ def _signing_key(secret: str) -> tuple[Any, str]:
         except (ValueError, TypeError) as e:
             raise ValueError("the PEM private key could not be read (it may be incomplete)") from e
     try:
-        raw = base64.b64decode(s, validate=True)
+        raw = base64.b64decode(s + "=" * (-len(s) % 4), validate=True)
     except ValueError as e:
-        raise ValueError("the secret is neither a PEM private key nor a base64 Ed25519 key") from e
+        raise ValueError("the secret is neither a PEM private key nor a base64 key") from e
     if len(raw) not in (32, 64):
-        raise ValueError("the secret is neither a PEM private key nor a base64 Ed25519 key")
+        try:  # the body of a PEM key pasted without its BEGIN/END lines
+            key = serialization.load_der_private_key(raw, password=None)
+        except (ValueError, TypeError) as e:
+            raise ValueError("the secret is neither a PEM private key nor a base64 key") from e
+        if isinstance(key, Ed25519PrivateKey):
+            return key, "EdDSA"
+        return key, "ES256"
     return Ed25519PrivateKey.from_private_bytes(raw[:32]), "EdDSA"
 
 
