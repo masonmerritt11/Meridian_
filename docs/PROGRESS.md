@@ -59,3 +59,6 @@ New department: History Loader, Strategy Lab (proven-only proposals, accept/reve
 
 ## 2026-11-18 — Coinbase account sync
 Read-only sync of the CIO account (view-only CDP key, key_permissions check, GET allowlist): positions, stops/targets from resting orders, exits and fees from fills, matched to recommendations. Compliance scanners now allow exactly the two read-only order-history paths. 111 tests. See docs/ACCOUNT_SYNC.md.
+
+## 2026-11-18 — Member portal
+MEMBER logins (created/reset by the CIO with password re-auth; one-time password, forced change; disable takes effect immediately). All dashboard APIs are now staff-only (tested across every GET route). /portal shows a member only their own account. 114 tests.

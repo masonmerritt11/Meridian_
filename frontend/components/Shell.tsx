@@ -21,7 +21,7 @@ export default function Shell({ title, children }: { title: string; children: Re
   const path = usePathname();
   const [me, setMe] = useState<{ username: string; role: string } | null>(null);
   const ov = usePoll<any>("/overview", 15000);
-  useEffect(() => { api("/auth/me").then(setMe).catch(() => {}); }, []);
+  useEffect(() => { api("/auth/me").then((m: any) => { if (m?.role === "MEMBER") location.href = "/portal/"; else setMe(m); }).catch(() => {}); }, []);
   const sim = ov.data?.simulated;
   return (
     <div className="shell">

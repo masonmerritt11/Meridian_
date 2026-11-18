@@ -11,7 +11,7 @@ export default function Login() {
     <div className="login">
       <form onSubmit={async (e) => {
         e.preventDefault(); setBusy(true); setErr(null);
-        try { await post("/auth/login", { username: u, password: p }); location.href = "/"; }
+        try { const r: any = await post("/auth/login", { username: u, password: p }); location.href = r.role === "MEMBER" ? "/portal/" : "/"; }
         catch (x: any) { setErr(x.message); } finally { setBusy(false); }
       }}>
         <div className="brand" style={{ padding: 0 }}>

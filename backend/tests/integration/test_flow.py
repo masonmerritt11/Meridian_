@@ -361,11 +361,13 @@ def test_recommendation_retired_when_price_runs_past_it(clean_env):
         s.add(BookSnapshot(instrument_id=case.instrument_id, ts=datetime.now(UTC), best_bid=past, best_ask=past,
                            spread_bps=Decimal(0), source="test"))
         cid = case.id
+        before = {x.id: x.state for x in s.execute(select(ResearchCase).where(ResearchCase.id != cid,
+                                                                             ResearchCase.instrument_id != case.instrument_id)).scalars()}
     ctx = make_context(clean_env, macro=FakeMacro())
     rt = Runtime.build(clean_env, ctx)
     rt.run_scheduled("exec.chief_of_staff")
     with session_scope() as s:
         c = s.get(ResearchCase, cid)
         assert c.state == "EXPIRED"
-        others = [x.state for x in s.execute(select(ResearchCase).where(ResearchCase.id != cid)).scalars()]
-        assert "RECOMMENDED" in others or not others  # untouched cases keep their state
+        after = {k: s.get(ResearchCase, k).state for k in before}
+        assert after == before  # cases on other instruments are untouched

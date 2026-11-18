@@ -36,12 +36,16 @@ def verify_password(pw: str, hashed: str) -> bool:
 class Principal:
     username: str
     role: str
+    member_id: str | None = None
+
+STAFF_ROLES = ("CIO", "VIEWER")
 
 
 def issue_token(user: User) -> str:
     st = get_settings()
     now = utcnow()
-    return jwt.encode({"sub": user.username, "role": user.role, "iat": int(now.timestamp()),
+    return jwt.encode({"sub": user.username, "role": user.role, "mid": str(user.member_id) if user.member_id else None,
+                       "iat": int(now.timestamp()),
                        "exp": int((now + timedelta(minutes=st.jwt_ttl_minutes)).timestamp())}, st.jwt_secret, algorithm="HS256")
 
 
@@ -59,6 +63,9 @@ def authenticate(s: Session, username: str, password: str) -> User | None:
     u = s.execute(select(User).where(User.username == username)).scalar()
     if u is None:
         bcrypt.checkpw(b"timing-equalizer", hash_password("x"))  # equalize timing for unknown users
+        return None
+    if getattr(u, "disabled", False):
+        verify_password(password, u.password_hash)
         return None
     return u if verify_password(password, u.password_hash) else None
 
@@ -82,10 +89,31 @@ def current_principal(request: Request) -> Principal:
         claims = jwt.decode(token, get_settings().jwt_secret, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or expired session") from e
-    return Principal(username=claims["sub"], role=claims["role"])
+    return Principal(username=claims["sub"], role=claims["role"], member_id=claims.get("mid"))
 
 
 def require_cio(p: Principal = Depends(current_principal)) -> Principal:
     if p.role != "CIO":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "CIO role required")
+    return p
+
+
+def require_staff(p: Principal = Depends(current_principal)) -> Principal:
+    """Everything on the CIO dashboard. Member logins never pass this."""
+    if p.role not in STAFF_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not available to member accounts")
+    return p
+
+
+def require_member(p: Principal = Depends(current_principal)) -> Principal:
+    """Member portal: the login must still exist, be enabled and be linked to a member (checked on every request)."""
+    if p.role != "MEMBER" or not p.member_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "member account required")
+    s = SessionLocal()
+    try:
+        u = s.execute(select(User).where(User.username == p.username)).scalar()
+        if u is None or u.disabled or str(u.member_id) != p.member_id:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "this login has been disabled")
+    finally:
+        s.close()
     return p

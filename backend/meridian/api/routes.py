@@ -17,6 +17,9 @@ from meridian.api.auth import (
     Principal,
     authenticate,
     current_principal,
+    hash_password,
+    require_member,
+    require_staff,
     get_db,
     issue_token,
     note_failure,
@@ -58,7 +61,8 @@ from meridian.registry import service as registry
 from meridian.risk import service as risk_svc
 
 router = APIRouter(prefix="/api")
-Read = Depends(current_principal)
+Read = Depends(require_staff)          # CIO dashboard: never member logins
+Anyone = Depends(current_principal)
 Cio = Depends(require_cio)
 
 
@@ -87,7 +91,7 @@ def login(body: LoginBody, request: Request, response: Response, s: Session = De
                         secure=get_settings().env == "production", max_age=get_settings().jwt_ttl_minutes * 60)
     audit.record(s, u.username, "auth.login", "user", u.username, {})
     s.commit()
-    return {"username": u.username, "role": u.role}
+    return {"username": u.username, "role": u.role, "must_change_password": bool(u.must_change_password)}
 
 
 @router.post("/auth/logout")
@@ -97,8 +101,27 @@ def logout(response: Response) -> dict[str, str]:
 
 
 @router.get("/auth/me")
-def me(p: Principal = Read) -> dict[str, str]:
-    return {"username": p.username, "role": p.role}
+def me(p: Principal = Anyone, s: Session = Depends(get_db)) -> dict[str, Any]:
+    u = s.execute(select(User).where(User.username == p.username)).scalar()
+    return {"username": p.username, "role": p.role, "must_change_password": bool(u and u.must_change_password)}
+
+
+class PasswordChangeBody(BaseModel):
+    current: str
+    new: str = Field(min_length=10, max_length=200)
+
+
+@router.post("/auth/password")
+def change_password(body: PasswordChangeBody, p: Principal = Anyone, s: Session = Depends(get_db)) -> dict[str, Any]:
+    u = s.execute(select(User).where(User.username == p.username)).scalar()
+    if u is None or u.disabled or not verify_password(body.current, u.password_hash):
+        raise HTTPException(403, "current password is incorrect")
+    if body.new == body.current:
+        raise HTTPException(422, "choose a different password")
+    u.password_hash, u.must_change_password = hash_password(body.new), False
+    audit.record(s, p.username, "auth.password_changed", "user", p.username, {})
+    s.commit()
+    return {"ok": True}
 
 
 # ------------------------------------------------------------------ overview
@@ -1069,3 +1092,74 @@ def _account_sync_status(s: Session) -> dict[str, Any]:
     return jsonable({"configured": configured, "last_ok": row.last_ok if row else None, "last_error": row.last_error if row else None,
                      "view_only": bool(perms) and perms.get("can_view", False) and not perms.get("can_trade") and not perms.get("can_transfer"),
                      "waiting_for_fills": list((row.pending or {}).keys()) if row else []})
+
+
+# ------------------------------------------------------------------ member logins & member portal
+class MemberLoginBody(BaseModel):
+    username: str = Field(min_length=3, max_length=128, pattern=r"^[A-Za-z0-9_.@+\-]+$")
+    password: str  # the CIO's own password (re-authentication)
+
+
+@router.post("/members/{member_id}/login")
+def member_login_create(member_id: uuid.UUID, body: MemberLoginBody, s: Session = Depends(get_db), p: Principal = Cio) -> dict[str, Any]:
+    """Create or reset a member's portal login. Returns a one-time password, shown once; they must change it."""
+    import secrets as _secrets
+
+    from meridian.db.models import Member
+    _reauth(s, p, body.password, "member.login_create")
+    m = s.get(Member, member_id)
+    if m is None:
+        raise HTTPException(404, "member not found")
+    clash = s.execute(select(User).where(User.username == body.username)).scalar()
+    if clash is not None and (clash.role != "MEMBER" or clash.member_id != m.id):
+        raise HTTPException(409, "that username is taken")
+    temp = _secrets.token_urlsafe(9)
+    u = clash or s.execute(select(User).where(User.member_id == m.id, User.role == "MEMBER")).scalar()
+    if u is None:
+        u = User(username=body.username, password_hash=hash_password(temp), role="MEMBER", member_id=m.id)
+        s.add(u)
+    else:
+        u.username, u.password_hash = body.username, hash_password(temp)
+    u.must_change_password, u.disabled = True, False
+    audit.record(s, f"cio:{p.username}", "member.login_reset", "member", m.id, {"username": body.username})
+    s.commit()
+    return {"username": u.username, "temporary_password": temp}
+
+
+@router.post("/members/{member_id}/login/disable")
+def member_login_disable(member_id: uuid.UUID, s: Session = Depends(get_db), p: Principal = Cio) -> dict[str, Any]:
+    u = s.execute(select(User).where(User.member_id == member_id, User.role == "MEMBER")).scalar()
+    if u is None:
+        raise HTTPException(404, "no login for this member")
+    u.disabled = True
+    audit.record(s, f"cio:{p.username}", "member.login_disabled", "member", member_id, {"username": u.username})
+    s.commit()
+    return {"ok": True}
+
+
+@router.get("/members/{member_id}/login")
+def member_login_status(member_id: uuid.UUID, s: Session = Depends(get_db), _: Principal = Read) -> dict[str, Any]:
+    u = s.execute(select(User).where(User.member_id == member_id, User.role == "MEMBER")).scalar()
+    if u is None:
+        return {"exists": False}
+    last = s.execute(select(AuditLog.ts).where(AuditLog.actor == u.username, AuditLog.action == "auth.login")
+                     .order_by(desc(AuditLog.id)).limit(1)).scalar()
+    return jsonable({"exists": True, "username": u.username, "disabled": u.disabled,
+                     "must_change_password": u.must_change_password, "last_login": last})
+
+
+@router.get("/me/account")
+def my_account(s: Session = Depends(get_db), p: Principal = Depends(require_member)) -> dict[str, Any]:
+    """A member's own account only. Built from the member id in their login; no parameter can point it elsewhere."""
+    from meridian.members import service as ms
+    d = ms.detail(s, uuid.UUID(p.member_id))  # type: ignore[arg-type]
+    t = ms.replay(s)["terms"]
+    keep = ("name", "joined", "value", "contributed", "withdrawn", "gain", "gain_pct", "ownership_pct", "realized_pnl_share",
+            "fees_paid", "fee_exempt", "performance_fee_if_period_ended_now", "high_water_mark", "series", "trades",
+            "fee_history", "company_equity", "stats")
+    out = {k: d[k] for k in keep}
+    out["ledger"] = [{k: e[k] for k in ("kind", "amount", "original", "effective_at")} for e in d["ledger"]]
+    out["company_equity"] = [{k: g[k] for k in ("class", "pct", "vested_pct", "voting", "share_of_company_value")} for g in d["company_equity"]]
+    out["terms"] = ms.terms_view(t)
+    out["fund_name"] = "MERIDIAN Fund I"
+    return jsonable(out)

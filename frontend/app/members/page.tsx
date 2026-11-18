@@ -213,6 +213,7 @@ function PersonTab({ id, onChange }: { id: string; onChange: () => void }) {
           <input type="checkbox" checked={m.fee_exempt} onChange={(e) => patch({ fee_exempt: e.target.checked })} /> Fee-exempt (applies from now on)
         </label>
       </Card>
+      <PortalLogin id={id} name={m.name} />
       <Card title="Management company equity" span={4}>
         {!m.company_equity.length ? <Empty>No equity in MERIDIAN Capital Management.</Empty> :
           m.company_equity.map((g: any) => <div key={g.id} className="note"><b>{pct(g.pct)}</b> {CLASS[g.class]} · {pct(g.vested_pct)} vested · {usd(g.share_of_company_value)}</div>)}
@@ -229,6 +230,35 @@ function PersonTab({ id, onChange }: { id: string; onChange: () => void }) {
               <td className="num" style={{ color: Number(t.share) >= 0 ? "var(--ok)" : "var(--bad)" }}>{signed(t.share)}</td></tr>))}</tbody></table>)}
       </Card>
     </div>
+  );
+}
+
+function PortalLogin({ id, name }: { id: string; name: string }) {
+  const { data: st, reload } = usePoll<any>(`/members/${id}/login`, 60000);
+  const [user, setUser] = useState(""), [pw, setPw] = useState(""), [err, setErr] = useState<string | null>(null);
+  const [issued, setIssued] = useState<any>(null);
+  const create = async () => {
+    setErr(null);
+    try { setIssued(await post(`/members/${id}/login`, { username: user || st?.username, password: pw })); setPw(""); reload(); }
+    catch (e: any) { setErr(e.message); }
+  };
+  const disable = async () => { try { await post(`/members/${id}/login/disable`, {}); reload(); } catch (e: any) { setErr(e.message); } };
+  return (
+    <Card title="Member portal login" span={4}>
+      {st?.exists ? (
+        <p>Username <b>{st.username}</b> · {st.disabled ? <Badge v="DISABLED" /> : st.must_change_password ? "waiting for first sign-in" : `last signed in ${st.last_login ? fmtTime(st.last_login) : "never"}`}</p>
+      ) : <p className="notice">{name} has no login yet. Members see only their own account: value, gains, fees, history.</p>}
+      <div className="form-row">
+        <input placeholder="username" value={user} onChange={(e) => setUser(e.target.value)} style={{ width: 130 }} />
+        <input type="password" placeholder="your password" value={pw} onChange={(e) => setPw(e.target.value)} style={{ width: 130 }} />
+        <button className="primary" disabled={!pw || !(user || st?.username)} onClick={create}>{st?.exists ? "Reset" : "Create"}</button>
+        {st?.exists && !st.disabled && <button className="danger" onClick={disable}>Disable</button>}
+      </div>
+      <ErrorNote error={err} />
+      {issued && <div className="note" style={{ marginTop: 8 }}>Give {name} these once (they'll choose their own password at first sign-in):<br />
+        Username <b>{issued.username}</b> · One-time password <b><code>{issued.temporary_password}</code></b><br />
+        <span className="notice">Sign-in page: {typeof window !== "undefined" ? window.location.origin : ""}/login/. This password won't be shown again.</span></div>}
+    </Card>
   );
 }
 
