@@ -978,3 +978,81 @@ def members_end_grant(grant_id: int, body: PasswordBody, s: Session = Depends(ge
     audit.record(s, f"cio:{p.username}", "company.grant_end", "mgmt_equity_grant", grant_id, {})
     s.commit()
     return {"ok": True}
+
+
+# ------------------------------------------------------------------ backtest lab
+class ProposalDecisionBody(BaseModel):
+    status: Literal["ACCEPTED", "REJECTED"]
+    note: str = Field("", max_length=2000)
+    password: str | None = None
+
+
+@router.get("/backtest/overview")
+def backtest_overview(s: Session = Depends(get_db), _: Principal = Read) -> dict[str, Any]:
+    from meridian.backtest.workers import live_trend_config
+    from meridian.db.models import BtCandle, BtRun, StrategyProposal
+    run = s.execute(select(BtRun).order_by(desc(BtRun.id)).limit(1)).scalar()
+    _, ver, cfg = live_trend_config(s)
+    props = [_row(p, "id", "key", "title", "overrides", "base_config_version", "evidence", "status", "note", "decided_by",
+                  "decided_at", "applied_config_version", "created_at", "updated_at")
+             for p in s.execute(select(StrategyProposal).order_by(desc(StrategyProposal.updated_at)).limit(60)).scalars()]
+    bars = s.execute(select(func.count()).select_from(BtCandle)).scalar()
+    return jsonable({"live_config": cfg, "live_config_version": ver, "bars_stored": bars,
+                     "run": ({"id": run.id, "created_at": run.created_at, "config_version": run.config_version, **run.result} if run else None),
+                     "proposals": props})
+
+
+@router.get("/backtest/recommendations")
+def backtest_recommendations(s: Session = Depends(get_db), _: Principal = Read) -> dict[str, Any]:
+    from meridian.backtest.workers import rec_summary
+    return rec_summary(s)
+
+
+@router.post("/backtest/proposals/{pid}/decision")
+def backtest_proposal_decision(pid: int, body: ProposalDecisionBody, s: Session = Depends(get_db), p: Principal = Cio) -> dict[str, Any]:
+    """Accepting applies the change to the live strategy (versioned, reversible). Requires the CIO password."""
+    from meridian.backtest.workers import TREND_WORKER, live_trend_config
+    from meridian.db.models import StrategyProposal
+    prop = s.get(StrategyProposal, pid)
+    if prop is None:
+        raise HTTPException(404, "proposal not found")
+    if prop.status != "PROPOSED":
+        raise HTTPException(409, f"proposal is {prop.status}")
+    now = utcnow()
+    if body.status == "REJECTED":
+        prop.status, prop.note, prop.decided_by, prop.decided_at, prop.updated_at = "REJECTED", body.note, p.username, now, now
+        audit.record(s, f"cio:{p.username}", "strategy.proposal_rejected", "strategy_proposal", pid, {"note": body.note})
+        s.commit()
+        return {"status": "REJECTED"}
+    _reauth(s, p, body.password or "", "strategy.proposal_accept")
+    _, ver, cfg = live_trend_config(s)
+    if ver != prop.base_config_version:
+        raise HTTPException(409, "the live strategy changed since this was tested; it will be re-tested on the next run")
+    row = registry.update_config(s, TREND_WORKER, {**cfg, **prop.overrides}, f"cio:{p.username}",
+                                 f"accepted backtest proposal #{pid}: {prop.title}")
+    prop.status, prop.note, prop.decided_by, prop.decided_at, prop.updated_at = "ACCEPTED", body.note, p.username, now, now
+    prop.applied_config_version = row.config_version
+    for other in s.execute(select(StrategyProposal).where(StrategyProposal.status == "PROPOSED", StrategyProposal.id != pid)).scalars():
+        other.status, other.note, other.updated_at = "SUPERSEDED", f"live strategy changed by proposal #{pid}; will be re-tested", now
+    audit.record(s, f"cio:{p.username}", "strategy.proposal_accepted", "strategy_proposal", pid,
+                 jsonable({"overrides": prop.overrides, "config_version": row.config_version}))
+    s.commit()
+    return {"status": "ACCEPTED", "config_version": row.config_version}
+
+
+@router.post("/backtest/proposals/{pid}/revert")
+def backtest_proposal_revert(pid: int, body: PasswordBody, s: Session = Depends(get_db), p: Principal = Cio) -> dict[str, Any]:
+    from meridian.backtest.workers import TREND_WORKER, live_trend_config
+    from meridian.db.models import StrategyProposal
+    prop = s.get(StrategyProposal, pid)
+    if prop is None or prop.status != "ACCEPTED":
+        raise HTTPException(409, "only an accepted proposal can be reverted")
+    _reauth(s, p, body.password, "strategy.proposal_revert")
+    _, ver, _ = live_trend_config(s)
+    if ver != prop.applied_config_version:
+        raise HTTPException(409, "the strategy has changed again since; revert the later change first")
+    row = registry.update_config(s, TREND_WORKER, prop.base_config, f"cio:{p.username}", f"reverted backtest proposal #{pid}")
+    prop.status, prop.updated_at = "REVERTED", utcnow()
+    audit.record(s, f"cio:{p.username}", "strategy.proposal_reverted", "strategy_proposal", pid, {"config_version": row.config_version})
+    s.commit()
+    return {"status": "REVERTED", "config_version": row.config_version}

@@ -53,3 +53,6 @@ Management (equity grants: Class A founders/voting, B strategic/non-voting, C em
 of the founder's stake). Fund terms (default 2% management, 20% performance above a high-water mark, quarterly; founder
 fee-exempt) are versioned and never retroactive; fees move from investor accounts to the management company's account.
 Terms changes and equity grants require the CIO password. Strategy filters (all off) added for upcoming backtest proposals.
+
+## 2026-11-18 — Backtest Lab
+New department: History Loader, Strategy Lab (proven-only proposals, accept/revert with password), Trade Tester (every recommendation and blocked idea paper-tested; stop/target diagnostics). Signal replay verified identical to live. 104 tests passing. See docs/BACKTEST_LAB.md.

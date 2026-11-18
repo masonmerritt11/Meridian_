@@ -12,6 +12,7 @@ const NAV = [
   ["/lab/", "Research Laboratory"],
   ["/archive/", "Decision Archive"],
   ["/predictions/", "Prediction Desk"],
+  ["/backtest/", "Backtest Lab"],
   ["/members/", "Members"],
   ["/research/", "Learning Journal"],
 ];

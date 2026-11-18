@@ -1,4 +1,4 @@
-"""The full MERIDIAN organization: 11 departments, 59 logical roles.
+"""The full MERIDIAN organization: 12 departments, 62 logical roles.
 Roles with an implementing worker class are registered ACTIVE; the rest are PLANNED (defined, not running).
 PLANNED roles are never shown as healthy or producing output."""
 from __future__ import annotations
@@ -17,6 +17,8 @@ DEPARTMENTS: list[tuple[str, str, str]] = [
      "Reads trading psychology and philosophy continuously; learns and recommends only."),
     ("predictions", "Prediction Markets",
      "Kalshi 15-minute crypto up/down markets: odds history, strategy testing, live setups. Never holds through close."),
+    ("backtest", "Backtest Lab",
+     "Replays the live strategy on years of charts, proposes only proven improvements, and paper-tests every recommendation."),
 ]
 
 # (role_id, department, name, responsibility, escalation_to)
@@ -96,7 +98,13 @@ ROLES: list[tuple[str, str, str, str, str]] = [
      "Tests thousands of entry/exit rules (train on older windows, verify on newer) and studies late flips.", "cio"),
     ("pm.risk_officer", "predictions", "Prediction Risk Officer",
      "$70 worst-case loss per setup, one per window, no entries in the last 4 minutes, exit at least 2 minutes before close.", "cio"),
+    # Backtest lab (3)
+    ("bt.historian", "backtest", "History Loader", "Keeps up to two years of hourly charts per asset and per futures contract.", "bt.strategy_lab"),
+    ("bt.strategy_lab", "backtest", "Strategy Lab",
+     "Tests small changes to the live strategy; proposes only those that win on never-seen data.", "cio"),
+    ("bt.trade_tester", "backtest", "Trade Tester",
+     "Paper-tests every recommendation and blocked idea: winners, losers, and whether stops/targets help.", "bt.strategy_lab"),
 ]
 
-assert len(DEPARTMENTS) == 11
-assert len(ROLES) == 59, len(ROLES)
+assert len(DEPARTMENTS) == 12
+assert len(ROLES) == 62, len(ROLES)

@@ -611,3 +611,63 @@ class MgmtEquityGrant(Base):
     username: Mapped[str] = mapped_column(String(128))
     granted_at: Mapped[datetime] = _ts()
     revoked_at: Mapped[datetime | None] = _ts(nullable=True, default=False)
+
+
+# ---------------------------------------------------------------- backtest lab
+class BtCandle(Base):
+    """Hourly history used only for backtesting (spot proxies or individual futures contracts)."""
+    __tablename__ = "bt_candles"
+    product: Mapped[str] = mapped_column(String(64), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    asset: Mapped[str] = mapped_column(String(16), index=True)
+    open: Mapped[Decimal] = mapped_column(NUM)
+    high: Mapped[Decimal] = mapped_column(NUM)
+    low: Mapped[Decimal] = mapped_column(NUM)
+    close: Mapped[Decimal] = mapped_column(NUM)
+
+
+class BtRun(Base):
+    __tablename__ = "bt_runs"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    config_version: Mapped[int] = mapped_column(Integer)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = _ts()
+
+
+class StrategyProposal(Base):
+    __tablename__ = "strategy_proposals"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(300), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    overrides: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    base_config: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    base_config_version: Mapped[int] = mapped_column(Integer)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(16), default="PROPOSED")  # PROPOSED|ACCEPTED|REJECTED|EXPIRED|SUPERSEDED|REVERTED
+    note: Mapped[str] = mapped_column(Text, default="")
+    decided_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    decided_at: Mapped[datetime | None] = _ts(nullable=True, default=False)
+    applied_config_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = _ts()
+    updated_at: Mapped[datetime] = _ts()
+
+
+class RecSim(Base):
+    """Every committee recommendation (and every blocked / rejected one) tested as if it had been placed."""
+    __tablename__ = "rec_sims"
+    memo_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("committee_memos.id"), primary_key=True)
+    case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    asset: Mapped[str] = mapped_column(String(16))
+    direction: Mapped[str] = mapped_column(String(8))
+    decision: Mapped[str] = mapped_column(String(16))  # RECOMMEND | BLOCKED | REJECT | DEFER
+    made_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    entry: Mapped[Decimal] = mapped_column(NUM)
+    stop: Mapped[Decimal] = mapped_column(NUM)
+    target: Mapped[Decimal] = mapped_column(NUM)
+    status: Mapped[str] = mapped_column(String(16))   # PENDING | NOT_FILLED | FILLED
+    outcome: Mapped[str | None] = mapped_column(String(16), nullable=True)  # OPEN | TARGET | STOP | TIME
+    r: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    done: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = _ts()
