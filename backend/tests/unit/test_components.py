@@ -255,3 +255,14 @@ def test_missed_opportunity_rules():
     assert missed_reason("LONG", D(100), D(96), D(108), D(105))[0] == "MISSED_ENTRY_PASSED"
     assert missed_reason("LONG", D(100), D(96), D(108), D(102), high=D(108))[0] == "MISSED_TARGET_REACHED"
     assert missed_reason("LONG", D(100), D(96), D(108), None) is None
+
+
+def test_fee_period_boundaries():
+    from datetime import UTC, datetime
+
+    from meridian.members.service import period_ends
+    s, e = datetime(2026, 11, 18, tzinfo=UTC), datetime(2027, 8, 2, tzinfo=UTC)
+    assert [d.month for d in period_ends(s, e, "QUARTERLY")] == [1, 4, 7]
+    assert period_ends(s, e, "ANNUAL") == [datetime(2027, 1, 1, tzinfo=UTC)]
+    assert len(period_ends(s, e, "MONTHLY")) == 9
+    assert period_ends(datetime(2026, 12, 31, tzinfo=UTC), datetime(2027, 1, 1, tzinfo=UTC), "MONTHLY") == [datetime(2027, 1, 1, tzinfo=UTC)]

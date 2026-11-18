@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from typing import Any
 
@@ -43,10 +44,58 @@ class TrendParams:
     stop_atr: float = 2.0
     target_atr: float = 3.0
     min_bars: int = 60
+    # Optional filters (all off by default). Each can only be switched on by accepting a backtested proposal.
+    skip_hours_utc: tuple[int, ...] = ()   # no new signals when the signal bar starts in these UTC hours
+    skip_weekends: bool = False            # no new signals on Saturday/Sunday (UTC)
+    min_sep_atr: float = 0.0               # EMA fast/slow separation must be at least this many ATRs
+    min_brk_atr: float = 0.0               # close must clear the breakout level by at least this many ATRs
+    max_brk_atr: float = 0.0               # ... and by no more than this (0 = no cap): avoid chasing extended moves
+    htf_align: bool = False                # LONG only above the 200-bar average, SHORT only below
+    disabled_assets: tuple[str, ...] = ()  # assets that get no new signals
 
     @classmethod
     def from_config(cls, cfg: dict[str, Any]) -> TrendParams:
-        return cls(**{k: cfg[k] for k in cls.__dataclass_fields__ if k in cfg})
+        vals = {k: cfg[k] for k in cls.__dataclass_fields__ if k in cfg}
+        for k in ("skip_hours_utc", "disabled_assets"):
+            if k in vals:
+                vals[k] = tuple(vals[k] or ())
+        return cls(**vals)
+
+    def as_config(self) -> dict[str, Any]:
+        d = dict(self.__dict__)
+        d["skip_hours_utc"], d["disabled_assets"] = list(self.skip_hours_utc), list(self.disabled_assets)
+        return d
+
+
+def _ts_of(v: Any) -> datetime | None:
+    if isinstance(v, datetime):
+        return v
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def filter_reason(p: TrendParams, direction: str, ts: Any, close: float, sep_atr: float, brk_atr: float,
+                  sma200: float | None) -> str | None:
+    """Shared by live signals and the backtester so both apply identical filters."""
+    t = _ts_of(ts)
+    if t is not None:
+        t = t.astimezone(UTC)
+        if p.skip_hours_utc and t.hour in p.skip_hours_utc:
+            return "FILTER_HOUR"
+        if p.skip_weekends and t.weekday() >= 5:
+            return "FILTER_WEEKEND"
+    if p.min_sep_atr and sep_atr < p.min_sep_atr:
+        return "FILTER_WEAK_TREND"
+    if p.min_brk_atr and brk_atr < p.min_brk_atr:
+        return "FILTER_WEAK_BREAKOUT"
+    if p.max_brk_atr and brk_atr > p.max_brk_atr:
+        return "FILTER_EXTENDED"
+    if p.htf_align and sma200 is not None:
+        if (direction == "LONG" and close <= sma200) or (direction == "SHORT" and close >= sma200):
+            return "FILTER_HIGHER_TIMEFRAME"
+    return None
 
 
 @dataclass
@@ -85,6 +134,11 @@ def evaluate_trend(bars: list[dict[str, Any]], tick: Decimal, p: TrendParams) ->
         calc["reason"] = "NO_SETUP"
         return TrendSignal(None, 0.0, None, None, None, calc)
     sep = abs(ef - es) / a
+    sma200 = sum(closes[-200:]) / 200 if len(closes) >= 200 else None
+    why = filter_reason(p, direction, bars[-1]["ts"], close, sep, brk / a, sma200)
+    if why:
+        calc.update({"reason": why, "ema_separation_atr": round(sep, 4), "breakout_atr": round(brk / a, 4)})
+        return TrendSignal(None, 0.0, None, None, None, calc)
     strength = round(0.5 * min(1.0, sep / 3) + 0.5 * min(1.0, brk / a), 4)
     entry = Decimal(str(close))
     if direction == "LONG":

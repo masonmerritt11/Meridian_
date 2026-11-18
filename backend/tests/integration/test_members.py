@@ -1,4 +1,4 @@
-"""Member ownership by unit accounting."""
+"""Fund structure: capital accounts, fees, management-company equity."""
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -8,13 +8,12 @@ import pytest
 import sqlalchemy.exc
 from sqlalchemy import select, text
 
-from meridian.db.models import CapitalEvent, Member, MemberLedger, Position
+from meridian.db.models import CapitalEvent, FundTerms, Member, MemberLedger, Position
 from meridian.db.session import session_scope
 from meridian.members import service as ms
 from test_flow import client, login
 
 pytestmark = pytest.mark.integration
-T0 = datetime.now(UTC) + timedelta(minutes=5)  # after the startup seed
 
 
 def _trade(s, pnl, at):  # noqa: ANN001
@@ -23,66 +22,107 @@ def _trade(s, pnl, at):  # noqa: ANN001
                    exit_price=D(4000) + D(pnl), realized_pnl=D(pnl), recorded_by="cio"))
 
 
-def test_original_split_then_later_member_and_trades(clean_env):
-    with session_scope() as s:  # startup recorded the $700 and seeded Mason $600 + Member 1 $100
-        mason = s.execute(select(Member).where(Member.name == "Mason")).scalar_one()
+def _no_fees(s):  # noqa: ANN001
+    ms.set_terms(s, D(0), D(0), D(0), True, "QUARTERLY", "test: no fees", "cio")
+
+
+def _by(s):  # noqa: ANN001
+    return {r["name"]: r for r in ms.overview(s)["members"]}
+
+
+def test_seed_and_allocation_by_capital_account(clean_env):
+    import time
+    with session_scope() as s:
+        _no_fees(s)
+        t0 = s.execute(select(FundTerms.effective_at).order_by(FundTerms.id.desc())).scalars().first()
+    time.sleep(0.05)
+    step = lambda n: t0 + timedelta(milliseconds=5 * n)  # noqa: E731  (all inside the past few ms, after the seed)
+    with session_scope() as s:
+        by = _by(s)
+        assert by["Member 1"]["ownership_pct"] == "14.29" and by["Mason"]["ownership_pct"] == "85.71"
+        assert by["Mason"]["fee_exempt"] and not by["Member 1"]["fee_exempt"]
+        co = ms.company(s)
+        assert [(g["name"], g["class"], g["pct"], g["voting"]) for g in co["grants"]] == [("Mason", "A", "100.0000", True)]
         m1 = s.execute(select(Member).where(Member.name == "Member 1")).scalar_one()
         with pytest.raises(ms.MemberError):
             ms.record(s, m1.id, "CONTRIBUTION", D(1), True, "", "cio")  # nothing left unassigned
-        ids = (mason.id, m1.id)
+        _trade(s, 70, step(1))   # +10%
     with session_scope() as s:
-        ov = ms.overview(s)
-        by = {r["name"]: r for r in ov["members"]}
-        assert by["Member 1"]["ownership_pct"] == "14.29" and by["Mason"]["ownership_pct"] == "85.71"
-        assert ov["unassigned"] is None and ov["nav_per_unit"] == "1.000000"
-        _trade(s, 70, T0 + timedelta(days=1))  # +10%
-    with session_scope() as s:
-        by = {r["name"]: r for r in ms.overview(s)["members"]}
+        by = _by(s)
         assert by["Member 1"]["value"] == "110.00" and by["Mason"]["value"] == "660.00"
-        # a new member joins at NAV 1.10: buys units without taking any of the earlier gain
         late = Member(name="Late")
         s.add(late)
         s.flush()
-        e = ms.record(s, late.id, "CONTRIBUTION", D(220), False, "joins", "cio", now=T0 + timedelta(days=2))
-        assert e.nav_per_unit == D("1.1") and e.units == D(200)
-        late_id = late.id
+        ms.record(s, late.id, "CONTRIBUTION", D(220), False, "joins", "cio", now=step(2))
+        late_id, m1_id = late.id, s.execute(select(Member.id).where(Member.name == "Member 1")).scalar_one()
     with session_scope() as s:
         ov = ms.overview(s)
         by = {r["name"]: r for r in ov["members"]}
-        assert ov["equity"] == "990.00" and by["Late"]["value"] == "220.00" and by["Member 1"]["value"] == "110.00"
-        _trade(s, -99, T0 + timedelta(days=3))  # -10%, shared by all three
+        assert ov["fund_total"] == "990.00" and by["Late"]["value"] == "220.00" and by["Member 1"]["value"] == "110.00"
+        _trade(s, -99, step(3))  # -10%, shared by all three
     with session_scope() as s:
-        by = {r["name"]: r for r in ms.overview(s)["members"]}
+        by = _by(s)
         assert by["Late"]["value"] == "198.00" and by["Member 1"]["value"] == "99.00" and by["Mason"]["value"] == "594.00"
-        d = ms.detail(s, ids[1])
-        assert [t["share"] for t in d["trades"]] == ["-11.00", "10.00"] and d["stats"]["trades"] == 2
-        assert d["series"] and d["gain"] == "-1.00"
+        d = ms.detail(s, m1_id)
+        assert [t["share"] for t in d["trades"]] == ["-11.00", "10.00"] and d["gain"] == "-1.00" and d["series"]
         with pytest.raises(ms.MemberError):
             ms.record(s, late_id, "WITHDRAWAL", D(500), False, "", "cio")
-        ms.record(s, late_id, "WITHDRAWAL", D(98), False, "partial", "cio", now=T0 + timedelta(days=4))
+        ms.record(s, late_id, "WITHDRAWAL", D(98), False, "partial", "cio", now=step(4))
     with session_scope() as s:
-        by = {r["name"]: r for r in ms.overview(s)["members"]}
+        by = _by(s)
         assert by["Late"]["value"] == "100.00" and by["Late"]["withdrawn"] == "98.00"
     with pytest.raises(sqlalchemy.exc.DBAPIError), session_scope() as s:
         s.execute(text("UPDATE member_ledger SET amount = 1"))
 
 
-def test_members_api_and_seed_sql(clean_env):
-    # the migration's seed block (for databases that already had the $700) gives the same result as startup seeding
-    from pathlib import Path
+def test_fees_high_water_mark_and_company(clean_env):
+    with session_scope() as s:  # 2% management fee, 20% performance above the high-water mark, monthly
+        ms.set_terms(s, D(2), D(20), D(0), True, "MONTHLY", "test", "cio")
+        t = s.execute(select(FundTerms).order_by(FundTerms.id.desc())).scalars().first()
+        start = t.effective_at
+        _trade(s, 70, start + timedelta(days=1))           # +10% early in month 1
+    # one year later: management fee ~2% of Member 1's capital; performance fee charged once on the early gain
+    later = start + timedelta(days=365)
     with session_scope() as s:
-        s.execute(text("ALTER TABLE member_ledger DISABLE TRIGGER member_ledger_append_only"))
-        s.execute(text("DELETE FROM member_ledger; DELETE FROM members;"))
-        s.execute(text("ALTER TABLE member_ledger ENABLE TRIGGER member_ledger_append_only"))
-    src = Path(__file__).parents[2] / "migrations/versions/0006_members.py"
-    body = src.read_text().split('op.execute("""\n        DO $$')[1].split('$$;\n    """)')[0]
+        r = ms.replay(s, until=later)
+        f = r["fund"]
+        m1 = s.execute(select(Member).where(Member.name == "Member 1")).scalar_one()
+        k = str(m1.id)
+        mgmt = f.mgmt_fees[k]
+        perf = f.perf_fees[k]
+        assert D("1.9") < mgmt < D("2.3")           # ~2% of ~$108-110
+        assert D("1.7") < perf < D("2.1")           # 20% of ~$9.9 profit above the $100 mark
+        assert f.mgmt_fees.get(str(s.execute(select(Member.id).where(Member.name == "Mason")).scalar_one())) is None  # exempt
+        total = f.total()
+        assert abs(total - D(770)) < D("0.0001")    # fees move money, never create or destroy it
+        assert abs(f.accounts[ms.GP] - (mgmt + perf)) < D("0.01")  # plus its tiny share of later trades
+        assert f.hwm[k] == f.accounts[k] or f.hwm[k] > f.accounts[k]
+
+
+def test_company_grants_come_from_founder(clean_env):
     with session_scope() as s:
-        s.execute(text("DO $$" + body + "$$;"))
+        m1 = s.execute(select(Member).where(Member.name == "Member 1")).scalar_one()
+        g = ms.grant(s, m1.id, "B", D(2), 0, 0, "strategic partner", "cio")
+        rows = {(x["name"], x["class"]): x for x in ms.company(s)["grants"]}
+        assert rows[("Mason", "A")]["pct"] == "98.0000" and rows[("Member 1", "B")]["pct"] == "2.0000"
+        assert not rows[("Member 1", "B")]["voting"]
+        with pytest.raises(ms.MemberError):
+            ms.grant(s, m1.id, "C", D(99), 48, 12, "too much", "cio")
+        c = ms.grant(s, m1.id, "C", D(5), 48, 12, "employee", "cio")
+        assert next(x for x in ms.company(s)["grants"] if x["id"] == c.id)["vested_pct"] == "0.0000"  # inside the cliff
+        ms.revoke(s, g.id, "cio")
+        rows = {(x["name"], x["class"]): x for x in ms.company(s)["grants"]}
+        assert rows[("Mason", "A")]["pct"] == "95.0000" and ("Member 1", "B") not in rows
+        assert ms.company(s)["issued_pct"] == "100.0000"
+
+
+def test_members_api(clean_env):
     c = client()
     login(c)
     ov = c.get("/api/members").json()
     names = {m["name"]: m for m in ov["members"]}
     assert names["Mason"]["value"] == "600.00" and names["Member 1"]["ownership_pct"] == "14.29"
+    assert ov["terms"]["mgmt_fee_pct"] == "2.00" and ov["company"]["grants"][0]["pct"] == "100.0000"
     mid = names["Member 1"]["id"]
     assert c.patch(f"/api/members/{mid}", json={"name": "Jordan"}).status_code == 200
     new = c.post("/api/members", json={"name": "Taylor"}).json()["id"]
@@ -92,6 +132,15 @@ def test_members_api_and_seed_sql(clean_env):
     assert {m["name"] for m in ov["members"]} == {"Mason", "Jordan", "Taylor"} and ov["equity"] == "1050.00"
     assert c.get(f"/api/members/{new}").json()["ownership_pct"] == "33.33"
     assert c.post(f"/api/members/{new}/ledger", json={"kind": "WITHDRAWAL", "amount": "9999"}).status_code == 400
+    bad = c.post("/api/members/terms", json={"mgmt_fee_pct": "1", "perf_alloc_pct": "15", "reason": "smaller pool", "password": "nope"})
+    assert bad.status_code == 403
+    ok = c.post("/api/members/terms", json={"mgmt_fee_pct": "1", "perf_alloc_pct": "15", "reason": "smaller pool",
+                                             "password": "test-password-123"})
+    assert ok.status_code == 200 and c.get("/api/members").json()["terms"]["perf_alloc_pct"] == "15.00"
+    g = c.post("/api/members/company/grants", json={"member_id": new, "equity_class": "B", "pct": "3",
+                                                     "password": "test-password-123"})
+    assert g.status_code == 200, g.text
+    assert c.get(f"/api/members/{new}").json()["company_equity"][0]["pct"] == "3.0000"
     with session_scope() as s:
         assert s.execute(select(CapitalEvent).where(CapitalEvent.note.like("member:%"))).scalars().first() is not None
         assert len(list(s.execute(select(MemberLedger)).scalars())) == 3

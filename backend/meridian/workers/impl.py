@@ -195,7 +195,7 @@ class TrendSignalWorker(BaseWorker):
                       responsibility="EMA(20/50) trend + 20-bar Donchian breakout, 2xATR stop, 3xATR target.",
                       version=STRATEGY_VERSION, input_model=CandlesIngestedV1, output_model=TrendOutput,
                       subscribes=("market.candles.ingested",), escalation_to="exec.research_officer",
-                      default_config=TrendParams().__dict__)
+                      default_config=TrendParams().as_config())
 
     def handle(self, s: Session, env: Envelope, rc: RunContext) -> TrendOutput:
         p = CandlesIngestedV1.model_validate(env.payload)
@@ -206,6 +206,8 @@ class TrendSignalWorker(BaseWorker):
         rc.ref("candles", f"{inst.id}:{p.granularity}:{rows[0].ts.isoformat() if rows else ''}..{p.last_ts.isoformat()}",
                _window_hash(rows))
         params = TrendParams.from_config(rc.config)
+        if inst.asset in params.disabled_assets:
+            return TrendOutput(summary=f"NO_SETUP: {inst.asset} disabled by accepted strategy proposal")
         sig = evaluate_trend(_bars(rows), inst.price_increment or Decimal("0.01"), params)
         rc.metrics.update({"bars": len(rows), "strength": sig.strength})
         if sig.direction is None:

@@ -838,6 +838,39 @@ class MemberPatch(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=120)
     note: str | None = Field(None, max_length=2000)
     active: bool | None = None
+    fee_exempt: bool | None = None
+
+
+class TermsBody(BaseModel):
+    mgmt_fee_pct: Decimal = Field(ge=0, le=5)
+    perf_alloc_pct: Decimal = Field(ge=0, le=50)
+    hurdle_pct: Decimal = Field(Decimal(0), ge=0, le=50)
+    high_water_mark: bool = True
+    perf_period: Literal["MONTHLY", "QUARTERLY", "ANNUAL"] = "QUARTERLY"
+    reason: str = Field(min_length=3, max_length=2000)
+    password: str
+
+
+class GrantBody(BaseModel):
+    member_id: uuid.UUID
+    equity_class: Literal["A", "B", "C"]
+    pct: Decimal = Field(gt=0, le=100)
+    vesting_months: int = Field(0, ge=0, le=120)
+    cliff_months: int = Field(0, ge=0, le=60)
+    note: str = Field("", max_length=2000)
+    password: str
+
+
+class PasswordBody(BaseModel):
+    password: str
+
+
+def _reauth(s: Session, p: Principal, password: str, action: str) -> None:
+    u = s.execute(select(User).where(User.username == p.username)).scalar()
+    if u is None or not verify_password(password, u.password_hash):
+        audit.record(s, p.username, f"{action}_denied", "member", "-", {"reason": "re-authentication failed"})
+        s.commit()
+        raise HTTPException(403, "password check failed; nothing changed")
 
 
 class LedgerBody(BaseModel):
@@ -900,3 +933,48 @@ def member_ledger(member_id: uuid.UUID, body: LedgerBody, s: Session = Depends(g
                  jsonable({**body.model_dump(), "units": e.units, "nav_per_unit": e.nav_per_unit}))
     s.commit()
     return jsonable({"id": e.id, "units": e.units, "nav_per_unit": e.nav_per_unit})
+
+
+
+@router.post("/members/terms")
+def members_set_terms(body: TermsBody, s: Session = Depends(get_db), p: Principal = Cio) -> dict[str, Any]:
+    """New fund terms apply from now on, never retroactively. Requires the CIO password."""
+    from meridian.members import service as ms
+    _reauth(s, p, body.password, "fund.terms_change")
+    try:
+        t = ms.set_terms(s, body.mgmt_fee_pct, body.perf_alloc_pct, body.hurdle_pct, body.high_water_mark,
+                         body.perf_period, body.reason, p.username)
+    except ms.MemberError as e:
+        raise HTTPException(400, str(e)) from e
+    audit.record(s, f"cio:{p.username}", "fund.terms_change", "fund_terms", t.id,
+                 jsonable(body.model_dump(exclude={"password"})))
+    s.commit()
+    return jsonable(ms.terms_view(t))
+
+
+@router.post("/members/company/grants")
+def members_grant(body: GrantBody, s: Session = Depends(get_db), p: Principal = Cio) -> dict[str, Any]:
+    """Issue management-company equity. Comes out of the founder's stake. Requires the CIO password."""
+    from meridian.members import service as ms
+    _reauth(s, p, body.password, "company.grant")
+    try:
+        g = ms.grant(s, body.member_id, body.equity_class, body.pct, body.vesting_months, body.cliff_months, body.note, p.username)
+    except ms.MemberError as e:
+        raise HTTPException(400, str(e)) from e
+    audit.record(s, f"cio:{p.username}", "company.grant", "mgmt_equity_grant", g.id,
+                 jsonable(body.model_dump(exclude={"password"})))
+    s.commit()
+    return {"id": g.id}
+
+
+@router.post("/members/company/grants/{grant_id}/end")
+def members_end_grant(grant_id: int, body: PasswordBody, s: Session = Depends(get_db), p: Principal = Cio) -> dict[str, Any]:
+    from meridian.members import service as ms
+    _reauth(s, p, body.password, "company.grant_end")
+    try:
+        ms.revoke(s, grant_id, p.username)
+    except ms.MemberError as e:
+        raise HTTPException(400, str(e)) from e
+    audit.record(s, f"cio:{p.username}", "company.grant_end", "mgmt_equity_grant", grant_id, {})
+    s.commit()
+    return {"ok": True}

@@ -46,3 +46,10 @@ New Members tab: unit accounting (like a fund). Original $700 seeded as Mason $6
 unit; later money buys units at the current value per unit, withdrawals redeem them; each closed trade is split by
 ownership at the moment it closes. Per-person tabs: value, ownership, gain, value over time, history, share of each
 trade. Ledger is append-only (DB trigger). Money added/withdrawn here also updates account capital.
+
+## 2026-11-18 — Fund structure (small-pool version of the two-entity model)
+Members now model MERIDIAN Fund I (investor capital accounts; trades shared by capital at close) and MERIDIAN Capital
+Management (equity grants: Class A founders/voting, B strategic/non-voting, C employees/vesting; new grants come out
+of the founder's stake). Fund terms (default 2% management, 20% performance above a high-water mark, quarterly; founder
+fee-exempt) are versioned and never retroactive; fees move from investor accounts to the management company's account.
+Terms changes and equity grants require the CIO password. Strategy filters (all off) added for upcoming backtest proposals.

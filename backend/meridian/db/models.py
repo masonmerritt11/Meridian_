@@ -559,6 +559,7 @@ class Member(Base):
     role: Mapped[str] = mapped_column(String(16), default="MEMBER")  # OWNER | MEMBER
     note: Mapped[str] = mapped_column(Text, default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    fee_exempt: Mapped[bool] = mapped_column(Boolean, default=False)  # founder/GP capital usually pays no fees
     created_at: Mapped[datetime] = _ts()
 
 
@@ -578,3 +579,35 @@ class MemberLedger(Base):
     username: Mapped[str] = mapped_column(String(128))
     effective_at: Mapped[datetime] = _ts()
     created_at: Mapped[datetime] = _ts()
+
+
+class FundTerms(Base):
+    """Versioned fund terms; each version applies from effective_at onward (never retroactively)."""
+    __tablename__ = "fund_terms"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    mgmt_fee_pct: Mapped[Decimal] = mapped_column(NUM)        # annual % of capital, accrued continuously
+    perf_alloc_pct: Mapped[Decimal] = mapped_column(NUM)      # % of profit above the high-water mark (+ hurdle)
+    hurdle_pct: Mapped[Decimal] = mapped_column(NUM)          # annual % return investors keep before the performance fee
+    high_water_mark: Mapped[bool] = mapped_column(Boolean, default=True)
+    perf_period: Mapped[str] = mapped_column(String(16), default="QUARTERLY")  # MONTHLY | QUARTERLY | ANNUAL
+    reason: Mapped[str] = mapped_column(Text, default="")
+    changed_by: Mapped[str] = mapped_column(String(128))
+    effective_at: Mapped[datetime] = _ts()
+
+
+class MgmtEquityGrant(Base):
+    """Ownership of MERIDIAN Capital Management (the management company), separate from fund capital.
+    Append-only: a change is a new grant plus revoked_at on the old one."""
+    __tablename__ = "mgmt_equity_grants"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    member_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("members.id"), index=True)
+    equity_class: Mapped[str] = mapped_column(String(1))      # A founders (voting) | B strategic (non-voting) | C employees
+    pct: Mapped[Decimal] = mapped_column(NUM)                 # % of the management company
+    voting: Mapped[bool] = mapped_column(Boolean, default=False)
+    vesting_months: Mapped[int] = mapped_column(Integer, default=0)
+    cliff_months: Mapped[int] = mapped_column(Integer, default=0)
+    vesting_start: Mapped[datetime] = _ts()
+    note: Mapped[str] = mapped_column(Text, default="")
+    username: Mapped[str] = mapped_column(String(128))
+    granted_at: Mapped[datetime] = _ts()
+    revoked_at: Mapped[datetime | None] = _ts(nullable=True, default=False)
