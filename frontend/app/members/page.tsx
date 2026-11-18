@@ -26,12 +26,13 @@ function Ownership({ rows, unassigned }: { rows: any[]; unassigned: any }) {
 
 function AddMember({ onDone }: { onDone: (id: string) => void }) {
   const [name, setName] = useState(""), [amount, setAmount] = useState(""), [note, setNote] = useState("");
+  const [original, setOriginal] = useState(false);
   const [err, setErr] = useState<string | null>(null), [busy, setBusy] = useState(false);
   const submit = async () => {
     setBusy(true); setErr(null);
     try {
       const { id } = await post<{ id: string }>("/members", { name, note });
-      if (Number(amount) > 0) await post(`/members/${id}/ledger`, { kind: "CONTRIBUTION", amount, note: note || "initial investment" });
+      if (Number(amount) > 0) await post(`/members/${id}/ledger`, { kind: "CONTRIBUTION", amount, original, note: note || (original ? "share of the original capital" : "initial investment") });
       setName(""); setAmount(""); setNote(""); onDone(id);
     } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
@@ -41,6 +42,7 @@ function AddMember({ onDone }: { onDone: (id: string) => void }) {
         <label>Name<br /><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" /></label>
         <label>Investing now (optional)<br /><input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="$ amount" inputMode="decimal" /></label>
         <label style={{ flex: 1 }}>Note<br /><input style={{ width: "100%" }} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. joined Dec 2026" /></label>
+        <label><input type="checkbox" checked={original} onChange={(e) => setOriginal(e.target.checked)} /> from the original capital (already in the account)</label>
         <button className="primary" disabled={!name.trim() || busy} onClick={submit}>Add person</button>
       </div>
       <ErrorNote error={err} />
@@ -52,12 +54,13 @@ function AddMember({ onDone }: { onDone: (id: string) => void }) {
 function MemberTab({ id, onChange }: { id: string; onChange: () => void }) {
   const { data: m, error, reload } = usePoll<any>(`/members/${id}`, 30000);
   const [kind, setKind] = useState("CONTRIBUTION"), [amount, setAmount] = useState(""), [note, setNote] = useState("");
+  const [original, setOriginal] = useState(false);
   const [name, setName] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null), [busy, setBusy] = useState(false);
   if (!m) return <ErrorNote error={error} />;
   const record = async () => {
     setBusy(true); setErr(null);
-    try { await post(`/members/${id}/ledger`, { kind, amount, note }); setAmount(""); setNote(""); reload(); onChange(); }
+    try { await post(`/members/${id}/ledger`, { kind, amount, note, original: kind === "CONTRIBUTION" && original }); setAmount(""); setOriginal(false); setNote(""); reload(); onChange(); }
     catch (e: any) { setErr(e.message); } finally { setBusy(false); }
   };
   const rename = async () => {
@@ -92,6 +95,7 @@ function MemberTab({ id, onChange }: { id: string; onChange: () => void }) {
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note" style={{ flex: 1 }} />
           <button className="primary" disabled={!(Number(amount) > 0) || busy} onClick={record}>Record</button>
         </div>
+        {kind === "CONTRIBUTION" && <label className="notice"><input type="checkbox" checked={original} onChange={(e) => setOriginal(e.target.checked)} /> from the original capital (already in the account, $1.00 per unit)</label>}
         <ErrorNote error={err} />
         <p className="notice">Priced at today's {usd(m.nav_per_unit)} per unit. Entries are permanent; fix a mistake with an opposite entry.</p>
         <div className="form-row" style={{ marginTop: 12 }}>
