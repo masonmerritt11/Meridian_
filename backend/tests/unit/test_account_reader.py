@@ -25,7 +25,7 @@ def test_jwt_es256_and_ed25519():
     pem, pub = _ec_pem()
     t = build_jwt(KEY, pem.replace("\n", "\\n"), "GET", "/api/v3/brokerage/cfm/positions", now=1_700_000_000)
     h = jwt.get_unverified_header(t)
-    assert h["alg"] == "ES256" and h["kid"] == KEY and len(h["nonce"]) == 32
+    assert h["alg"] == "ES256" and h["kid"] == KEY and len(h["nonce"]) == 64
     body = jwt.decode(t, pub, algorithms=["ES256"], options={"verify_nbf": False, "verify_exp": False})
     assert body["uri"] == "GET api.coinbase.com/api/v3/brokerage/cfm/positions" and body["iss"] == "cdp" and body["sub"] == KEY
     assert body["exp"] - body["nbf"] == 120

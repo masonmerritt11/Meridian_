@@ -104,7 +104,8 @@ def build_jwt(key_name: str, secret: str, method: str, path: str, now: int | Non
     key, alg = _signing_key(secret)
     now = int(now or time.time())
     payload = {"sub": key_name, "iss": "cdp", "nbf": now, "exp": now + 120, "uri": f"{method.upper()} {HOST}{path}"}
-    return jwt.encode(payload, key, algorithm=alg, headers={"kid": key_name, "nonce": secrets.token_hex(16), "typ": "JWT"})
+    # identical to Coinbase's official SDK (coinbase-advanced-py jwt_generator.build_jwt)
+    return jwt.encode(payload, key, algorithm=alg, headers={"kid": key_name, "nonce": secrets.token_hex()})
 
 
 class CoinbaseAccountReader:
