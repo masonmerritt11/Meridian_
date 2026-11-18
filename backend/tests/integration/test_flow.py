@@ -68,7 +68,7 @@ def test_end_to_end_vertical_slice(clean_env):
     login(c)
 
     ov = c.get("/api/overview").json()
-    assert ov["simulated"] is True and ov["workers_implemented"] == 61 and ov["workers_total"] == 62
+    assert ov["simulated"] is True and ov["workers_implemented"] == 62 and ov["workers_total"] == 63
     assert any(f["dataset"] == "macro_calendar" and f["status"] == "FRESH" for f in ov["freshness"])
 
     cases = c.get("/api/cases").json()

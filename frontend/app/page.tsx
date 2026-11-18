@@ -79,11 +79,12 @@ export default function Overview() {
         </Card>
 
         <Card title="Open positions — hold or exit" span={5} right={<Link href="/risk/">Risk →</Link>}>
-          {!data?.open_positions?.length ? <Empty>No open positions recorded. Record trades you execute in the Research Laboratory or Risk Command.</Empty> : (
+          <AccountSync st={data?.account_sync} />
+          {!data?.open_positions?.length ? <Empty>{data?.account_sync?.configured ? "No open positions on your Coinbase account." : "No open positions recorded. Record trades you execute in the Research Laboratory or Risk Command."}</Empty> : (
             <table><thead><tr><th>Position</th><th>Advice</th><th>Why</th></tr></thead>
               <tbody>{data.open_positions.map((p: any) => (
                 <tr key={p.id}>
-                  <td><Badge v={p.direction} /> {p.quantity} × {p.instrument_id}<div className="notice">entry {p.entry_price} · stop {p.stop_price}</div></td>
+                  <td><Badge v={p.direction} /> {p.quantity} × {p.instrument_id} {p.source === "COINBASE" && <span className="notice" title="synced from your Coinbase account">⟳</span>}<div className="notice">entry {p.entry_price} · stop {p.stop_price}</div></td>
                   <td><Badge v={p.advisory?.action ?? "PENDING"} /></td>
                   <td><div className="codes">{(p.advisory?.reason_codes ?? []).map((c: string) => <Code key={c} c={c} />)}</div>
                     <div className="notice">{p.advisory ? ago(p.advisory.created_at) : "awaiting first evaluation"}</div></td>
@@ -118,5 +119,16 @@ export default function Overview() {
         )}
       </div>
     </Shell>
+  );
+}
+
+
+function AccountSync({ st }: { st: any }) {
+  if (!st) return null;
+  if (!st.configured) return <p className="notice">Coinbase account sync is off. Add a view-only API key in Railway to sync trades automatically.</p>;
+  if (st.last_error) return <div className="error">Coinbase sync stopped: {st.last_error}</div>;
+  return (
+    <p className="notice">⟳ Synced from your Coinbase account (view-only) {st.last_ok ? `· ${ago(st.last_ok)}` : "· starting…"}
+      {st.waiting_for_fills?.length ? " · waiting for closing fills" : ""}</p>
   );
 }

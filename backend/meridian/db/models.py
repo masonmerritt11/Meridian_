@@ -337,6 +337,8 @@ class Position(Base):
     realized_pnl: Mapped[Decimal | None] = mapped_column(NUM, nullable=True)
     recorded_by: Mapped[str] = mapped_column(String(128))
     note: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(16), default="MANUAL")  # MANUAL | COINBASE (synced)
+    fees: Mapped[Decimal] = mapped_column(NUM, default=Decimal(0))
 
 
 class PositionAdvisory(Base):
@@ -671,3 +673,14 @@ class RecSim(Base):
     result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     done: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = _ts()
+
+
+class AccountSyncState(Base):
+    __tablename__ = "account_sync_state"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # "coinbase"
+    fills_cursor: Mapped[str | None] = mapped_column(String(64), nullable=True)  # last fill sequence timestamp seen
+    seen_fill_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)        # recent fill ids (dedupe)
+    last_ok: Mapped[datetime | None] = _ts(nullable=True, default=False)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    permissions: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    pending: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)  # positions gone on Coinbase, awaiting fills

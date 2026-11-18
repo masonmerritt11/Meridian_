@@ -1,4 +1,4 @@
-"""The full MERIDIAN organization: 12 departments, 62 logical roles.
+"""The full MERIDIAN organization: 12 departments, 63 logical roles.
 Roles with an implementing worker class are registered ACTIVE; the rest are PLANNED (defined, not running).
 PLANNED roles are never shown as healthy or producing output."""
 from __future__ import annotations
@@ -98,6 +98,8 @@ ROLES: list[tuple[str, str, str, str, str]] = [
      "Tests thousands of entry/exit rules (train on older windows, verify on newer) and studies late flips.", "cio"),
     ("pm.risk_officer", "predictions", "Prediction Risk Officer",
      "$70 worst-case loss per setup, one per window, no entries in the last 4 minutes, exit at least 2 minutes before close.", "cio"),
+    ("risk.account_sync", "risk", "Account Sync",
+     "Reads the CIO's Coinbase account with a view-only key every minute; keeps positions, stops, exits and fees in sync.", "risk.chief_risk_officer"),
     # Backtest lab (3)
     ("bt.historian", "backtest", "History Loader", "Keeps up to two years of hourly charts per asset and per futures contract.", "bt.strategy_lab"),
     ("bt.strategy_lab", "backtest", "Strategy Lab",
@@ -107,4 +109,4 @@ ROLES: list[tuple[str, str, str, str, str]] = [
 ]
 
 assert len(DEPARTMENTS) == 12
-assert len(ROLES) == 62, len(ROLES)
+assert len(ROLES) == 63, len(ROLES)

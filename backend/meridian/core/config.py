@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     llm_price_output_per_mtok: float = Field(10.0, alias="LLM_PRICE_OUTPUT_PER_MTOK")
     llm_price_per_web_search: float = Field(0.01, alias="LLM_PRICE_PER_WEB_SEARCH")
 
+    # CIO's own Coinbase account, read-only (CDP API key with View permission only). Never logged.
+    coinbase_api_key_name: str = Field("", alias="COINBASE_API_KEY_NAME")
+    coinbase_api_key_secret: str = Field("", alias="COINBASE_API_KEY_SECRET", repr=False)
+
     # Prediction markets desk (Kalshi public market data; read-only, no key)
     pm_enabled: bool = Field(True, alias="PM_ENABLED")
     pm_series: str = Field("KXBTC15M", alias="PM_SERIES")

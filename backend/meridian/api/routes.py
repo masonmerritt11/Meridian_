@@ -129,6 +129,7 @@ def overview(request: Request, s: Session = Depends(get_db), _: Principal = Read
         "open_positions": positions,
         "alerts": alerts[:20],
         "dlq_depth": s.execute(select(func.count()).select_from(DeadLetter).where(DeadLetter.resolved_at.is_(None))).scalar(),
+        "account_sync": _account_sync_status(s),
         "generated_at": utcnow().isoformat(),
     }
 
@@ -370,7 +371,7 @@ def _position_json(s: Session, p: Position) -> dict[str, Any]:
     adv = s.execute(select(PositionAdvisory).where(PositionAdvisory.position_id == p.id).order_by(desc(PositionAdvisory.id)).limit(1)).scalar()
     return jsonable({**_row(p, "id", "case_id", "instrument_id", "direction", "quantity", "entry_price", "stop_price",
                             "target_price", "contract_size", "status", "opened_at", "closed_at", "exit_price",
-                            "realized_pnl", "note"),
+                            "realized_pnl", "note", "source", "fees"),
                      "risk_usd": portfolio.position_risk(p),
                      "advisory": _row(adv, "action", "reason_codes", "detail", "created_at") if adv else None})
 
@@ -1056,3 +1057,15 @@ def backtest_proposal_revert(pid: int, body: PasswordBody, s: Session = Depends(
     audit.record(s, f"cio:{p.username}", "strategy.proposal_reverted", "strategy_proposal", pid, {"config_version": row.config_version})
     s.commit()
     return {"status": "REVERTED", "config_version": row.config_version}
+
+
+
+def _account_sync_status(s: Session) -> dict[str, Any]:
+    from meridian.db.models import AccountSyncState
+    st = get_settings()
+    row = s.get(AccountSyncState, "coinbase")
+    configured = bool(st.coinbase_api_key_name and st.coinbase_api_key_secret)
+    perms = (row.permissions or {}) if row else {}
+    return jsonable({"configured": configured, "last_ok": row.last_ok if row else None, "last_error": row.last_error if row else None,
+                     "view_only": bool(perms) and perms.get("can_view", False) and not perms.get("can_trade") and not perms.get("can_transfer"),
+                     "waiting_for_fills": list((row.pending or {}).keys()) if row else []})

@@ -88,7 +88,7 @@ class LimitsOfficer(AnalystWorker):
                            None, 1.0, {"daily_used": float(used[0]), "weekly_used": float(used[1]), "open_risk_used": float(used[2])})]
 
 
-BANNED = re.compile(r"(/orders\b|create_order|place_order|cancel_order|edit_order|submit_order|/brokerage/orders)", re.I)  # banned-pattern definition (detection only)
+BANNED = re.compile(r"(/orders\b(?!/historical/(?:batch|fills)\b)|create_order|place_order|cancel_order|edit_order|submit_order|/brokerage/orders(?!/historical/(?:batch|fills)\b))", re.I)  # banned-pattern definition (detection only)
 REQUIRED_TRIGGERS = ("trg_case_risk_veto", "trg_memo_risk_veto", "trg_audit_append_only",
                      "trg_risk_decisions_append_only", "trg_risk_config_immutable")
 

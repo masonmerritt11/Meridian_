@@ -56,3 +56,6 @@ Terms changes and equity grants require the CIO password. Strategy filters (all 
 
 ## 2026-11-18 — Backtest Lab
 New department: History Loader, Strategy Lab (proven-only proposals, accept/revert with password), Trade Tester (every recommendation and blocked idea paper-tested; stop/target diagnostics). Signal replay verified identical to live. 104 tests passing. See docs/BACKTEST_LAB.md.
+
+## 2026-11-18 — Coinbase account sync
+Read-only sync of the CIO account (view-only CDP key, key_permissions check, GET allowlist): positions, stops/targets from resting orders, exits and fees from fills, matched to recommendations. Compliance scanners now allow exactly the two read-only order-history paths. 111 tests. See docs/ACCOUNT_SYNC.md.

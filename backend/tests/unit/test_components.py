@@ -26,23 +26,29 @@ NOW = datetime(2026, 11, 10, 15, 30, tzinfo=UTC)
 
 
 # ---------------------------------------------------------------- organization
-def test_catalog_has_12_departments_62_roles():
-    assert len(DEPARTMENTS) == 12 and len(ROLES) == 62
+def test_catalog_has_12_departments_63_roles():
+    assert len(DEPARTMENTS) == 12 and len(ROLES) == 63
     counts = {}
     for _, d, *_ in ROLES:
         counts[d] = counts.get(d, 0) + 1
     assert counts == {"trend": 7, "stat_arb": 6, "global_macro": 7, "liquidity": 5, "volatility": 5, "predictions": 4, "backtest": 3,
-                      "portfolio": 5, "risk": 6, "data_ops": 6, "executive": 5, "research": 3}
-    assert len({r[0] for r in ROLES}) == 62
+                      "portfolio": 5, "risk": 7, "data_ops": 6, "executive": 5, "research": 3}
+    assert len({r[0] for r in ROLES}) == 63
 
 
 # ---------------------------------------------------------------- no execution
 def test_no_order_execution_code_exists():
     root = Path(__file__).resolve().parents[2] / "meridian"
-    banned = re.compile(r"(/orders\b|create_order|place_order|cancel_order|edit_order|submit_order|/brokerage/orders)", re.I)
+    banned = re.compile(r"(/orders\b(?!/historical/(?:batch|fills)\b)|create_order|place_order|cancel_order|edit_order|submit_order|/brokerage/orders(?!/historical/(?:batch|fills)\b))", re.I)
     hits = [f"{p}:{i}" for p in root.rglob("*.py") for i, line in enumerate(p.read_text().splitlines(), 1)
             if banned.search(line) and "banned" not in line]
     assert hits == []
+    # only the two read-only order-HISTORY paths are allowed; every write path is still caught
+    for bad in ("/api/v3/brokerage/orders", "/api/v3/brokerage/orders/batch_cancel", "/api/v3/brokerage/orders/edit",
+                "client.create_order(", "/orders/historical/batchx"):
+        assert banned.search(bad), bad
+    for ok in ("/api/v3/brokerage/orders/historical/batch", "/api/v3/brokerage/orders/historical/fills"):
+        assert not banned.search(ok), ok
 
 
 @pytest.mark.parametrize("method,path", [
