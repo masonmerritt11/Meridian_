@@ -79,10 +79,22 @@ class CoinbaseAccountReader:
         token = build_jwt(self._key_name, self._secret, "GET", path)
         r = self._http.get(path, params=params, headers={"Authorization": f"Bearer {token}"})
         if r.status_code == 401:
-            raise ProviderUnavailable("Coinbase rejected the API key (401): check the key name/secret and that it is active")
+            raise ProviderUnavailable(f"Coinbase rejected the API key (401). {self.describe()}. Coinbase said: {r.text[:160]!r}")
         if r.status_code != 200:
             raise ProviderUnavailable(f"HTTP {r.status_code} from {path}: {r.text[:200]}")
         return r.json()
+
+    def describe(self) -> str:
+        """Safe diagnostics: key type and name shape only, never the secret."""
+        _, alg = _signing_key(self._secret)
+        kind = "ECDSA key (correct type)" if alg == "ES256" else "Ed25519 key (Coinbase's trading API needs an ECDSA key)"
+        if self._key_name.startswith("organizations/") and "/apiKeys/" in self._key_name:
+            shape = "name format organizations/…/apiKeys/… (correct)"
+        elif re.fullmatch(r"[0-9a-fA-F\-]{30,40}", self._key_name):
+            shape = "name is a bare key ID (try the full organizations/…/apiKeys/… name)"
+        else:
+            shape = "name format not recognised (expected organizations/…/apiKeys/…)"
+        return f"MERIDIAN sees an {kind}; {shape}"
 
     def assert_read_only(self) -> dict[str, Any]:
         perms = self.get("/api/v3/brokerage/key_permissions")

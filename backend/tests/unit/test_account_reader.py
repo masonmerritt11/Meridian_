@@ -66,3 +66,23 @@ def test_parse_positions_and_levels():
     assert str(stop) == "4010" and str(target) == "4120"
     br = [{"product_id": "BIT-27NOV26-CDE", "side": "BUY", "order_configuration": {"trigger_bracket_gtc": {"limit_price": "88000", "stop_trigger_price": "93000"}}}]
     assert tuple(map(str, protective_levels(br, "BIT-27NOV26-CDE", "SHORT"))) == ("93000", "88000")
+
+
+def test_401_message_is_diagnostic_and_never_leaks_the_secret():
+    pem, _ = _ec_pem()
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, text="Unauthorized")
+    for name in (KEY, "3f1c2b9a-1111-2222-3333-444455556666"):
+        r = CoinbaseAccountReader(name, pem, transport=httpx.MockTransport(handler))
+        with pytest.raises(Exception) as e:
+            r.assert_read_only()
+        msg = str(e.value)
+        assert "ECDSA key (correct type)" in msg and "BEGIN" not in msg and pem[40:80] not in msg
+    ed = Ed25519PrivateKey.generate()
+    raw = ed.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption())
+    sec = base64.b64encode(raw).decode()
+    r = CoinbaseAccountReader("abc", sec, transport=httpx.MockTransport(handler))
+    with pytest.raises(Exception) as e:
+        r.assert_read_only()
+    assert "Ed25519" in str(e.value) and sec not in str(e.value)
