@@ -329,7 +329,10 @@ class AccountSyncWorker(BaseWorker):
             try:
                 reader = CoinbaseAccountReader(st.coinbase_api_key_name, st.coinbase_api_key_secret)
             except Exception as e:  # noqa: BLE001 — never echo the secret
-                return self._fail(s, f"API key could not be loaded: {type(e).__name__}")
+                from meridian.brokerage.coinbase_account import secret_kind
+                return self._fail(s, f"API key could not be loaded: {e if isinstance(e, ValueError) else type(e).__name__}. "
+                                     f"COINBASE_API_KEY_SECRET looks like {secret_kind(st.coinbase_api_key_secret)}; "
+                                     "it should be the whole -----BEGIN EC PRIVATE KEY----- ... -----END EC PRIVATE KEY----- block")
             self.ctx.services["account_reader"] = reader
         try:
             rep = sync_account(s, reader)

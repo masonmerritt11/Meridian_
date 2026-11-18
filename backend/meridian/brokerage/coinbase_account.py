@@ -12,6 +12,7 @@ EdDSA for base64 Ed25519 keys. uri claim = "GET api.coinbase.com<path>" (no quer
 from __future__ import annotations
 
 import base64
+import json
 import re
 import secrets
 import time
@@ -46,13 +47,50 @@ def check_account_path(method: str, path: str) -> None:
         raise ForbiddenRequest(f"path {path} is not on the read-only account allowlist")
 
 
+def normalize_secret(secret: str) -> str:
+    """Accepts the private key however it was pasted: real line breaks, literal \\n, spaces instead of line breaks,
+    surrounding quotes, or the whole downloaded cdp_api_key.json."""
+    s = secret.strip().strip('"').strip("'").strip()
+    if s.startswith("{"):
+        try:
+            data = json.loads(s)
+        except json.JSONDecodeError as e:
+            raise ValueError("the secret looks like JSON but could not be read") from e
+        s = str(data.get("privateKey") or data.get("private_key") or "").strip()
+        if not s:
+            raise ValueError("the JSON has no privateKey field")
+    s = s.replace("\\n", "\n").replace("\r", "")
+    m = re.search(r"-----BEGIN ([A-Z ]+)-----(.*?)-----END \1-----", s, re.S)
+    if m:
+        body = re.sub(r"\s+", "", m.group(2))
+        lines = "\n".join(body[i:i + 64] for i in range(0, len(body), 64))
+        return f"-----BEGIN {m.group(1)}-----\n{lines}\n-----END {m.group(1)}-----\n"
+    return re.sub(r"\s+", "", s)
+
+
+def secret_kind(secret: str) -> str:
+    try:
+        n = normalize_secret(secret)
+    except ValueError as e:
+        return str(e)
+    if "BEGIN" in n:
+        return "a PEM private key" + (" (EC)" if "EC PRIVATE" in n else "")
+    return f"a {len(n)}-character single-line value (not a PEM private key)"
+
+
 def _signing_key(secret: str) -> tuple[Any, str]:
-    s = secret.strip().replace("\\n", "\n")
+    s = normalize_secret(secret)
     if "BEGIN" in s:
-        return serialization.load_pem_private_key(s.encode(), password=None), "ES256"
-    raw = base64.b64decode(s)
+        try:
+            return serialization.load_pem_private_key(s.encode(), password=None), "ES256"
+        except (ValueError, TypeError) as e:
+            raise ValueError("the PEM private key could not be read (it may be incomplete)") from e
+    try:
+        raw = base64.b64decode(s, validate=True)
+    except ValueError as e:
+        raise ValueError("the secret is neither a PEM private key nor a base64 Ed25519 key") from e
     if len(raw) not in (32, 64):
-        raise ValueError("unrecognised API key secret format (expected an EC PEM key or a base64 Ed25519 key)")
+        raise ValueError("the secret is neither a PEM private key nor a base64 Ed25519 key")
     return Ed25519PrivateKey.from_private_bytes(raw[:32]), "EdDSA"
 
 

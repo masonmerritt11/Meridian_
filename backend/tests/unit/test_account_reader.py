@@ -86,3 +86,20 @@ def test_401_message_is_diagnostic_and_never_leaks_the_secret():
     with pytest.raises(Exception) as e:
         r.assert_read_only()
     assert "Ed25519" in str(e.value) and sec not in str(e.value)
+
+
+def test_secret_accepted_however_it_was_pasted():
+    from meridian.brokerage.coinbase_account import _signing_key, normalize_secret, secret_kind
+    pem, _ = _ec_pem()
+    body = pem.replace("\n", " ")                                   # Railway turned line breaks into spaces
+    variants = [pem, pem.replace("\n", "\\n"), body, f'"{pem}"', json.dumps({"name": KEY, "privateKey": pem}),
+                "  " + pem.replace("\n", "\r\n") + "  "]
+    for v in variants:
+        key, alg = _signing_key(v)
+        assert alg == "ES256", v[:30]
+    assert "PEM" in secret_kind(body)
+    with pytest.raises(ValueError) as e:
+        _signing_key("-----BEGIN EC PRIVATE KEY----- abc -----END EC PRIVATE KEY-----")
+    assert "incomplete" in str(e.value)
+    assert "single-line" in secret_kind("not-a-key-at-all")
+    assert normalize_secret(json.dumps({"privateKey": pem})).startswith("-----BEGIN")
