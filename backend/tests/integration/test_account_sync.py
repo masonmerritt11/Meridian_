@@ -134,3 +134,19 @@ def test_no_stop_order_and_flip_and_trade_key_refused(gold):
 def test_idle_without_key(gold):
     ctx = make_context(gold, macro=FakeMacro())
     assert execute(AccountSyncWorker(ctx), trigger="MANUAL").status == "IDLE"
+
+
+def test_overview_total_equity_includes_open_positions(gold):
+    from meridian.db.models import BookSnapshot
+    with session_scope() as s:
+        s.add(Position(instrument_id=GOL, direction="LONG", quantity=D(2), entry_price=D(4000), stop_price=D(3950),
+                       contract_size=D(1), status="OPEN", recorded_by="cio", fees=D("2.00")))
+        s.add(BookSnapshot(instrument_id=GOL, ts=datetime.now(UTC), best_bid=D(4024), best_ask=D(4026), spread_bps=D(5), source="t"))
+    c = client()
+    login(c)
+    ov = c.get("/api/overview").json()
+    pf = ov["portfolio"]
+    assert pf["unrealized_pnl"] == "48.00"                       # (4025 - 4000) x 2 - $2 fees
+    assert D(pf["total_equity"]) == D(pf["equity"]) + D("48.00")
+    [p] = ov["open_positions"]
+    assert D(str(p["mark"]["unrealized_pnl"])) == D(48) and p["mark"]["source"] == "order book"

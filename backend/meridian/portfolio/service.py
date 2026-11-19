@@ -77,12 +77,47 @@ def pnl_for(p: Position, price: Decimal) -> Decimal:
     return per * p.quantity * p.contract_size
 
 
+MARK_BOOK_MAX_AGE = timedelta(minutes=20)
+MARK_CANDLE_MAX_AGE = timedelta(hours=3)
+
+
+def mark_price(s: Session, instrument_id: str, now: datetime | None = None) -> tuple[Decimal | None, datetime | None, str]:
+    """Latest usable price for valuing an open position: order-book mid (<= 20 min old), else the latest hourly close
+    (<= 3 h old). Returns (price, as_of, source); price is None when nothing recent enough exists."""
+    from meridian.core.config import get_settings
+    from meridian.marketdata import service as md
+    now = now or utcnow()
+    b = md.latest_book(s, instrument_id)
+    if b is not None and b.best_bid is not None and b.best_ask is not None and now - b.ts <= MARK_BOOK_MAX_AGE:
+        return (Decimal(b.best_bid) + Decimal(b.best_ask)) / 2, b.ts, "order book"
+    c = md.load_candles(s, instrument_id, get_settings().candle_granularity, limit=1)
+    if c and now - c[-1].ts <= MARK_CANDLE_MAX_AGE + timedelta(hours=1):
+        return Decimal(c[-1].close), c[-1].ts, "latest close"
+    return None, None, "no recent price"
+
+
+def open_pnl(s: Session, now: datetime | None = None) -> tuple[Decimal, list[dict[str, Any]]]:
+    """Unrealized P&L of every open position at its mark price (positions with no recent price count as 0 and are flagged)."""
+    total, rows = Decimal(0), []
+    for p in s.execute(select(Position).where(Position.status == "OPEN")).scalars():
+        px, ts, src = mark_price(s, p.instrument_id, now)
+        pnl = pnl_for(p, px) - Decimal(p.fees or 0) if px is not None else None
+        if pnl is not None:
+            total += pnl
+        rows.append({"position_id": p.id, "mark": px, "as_of": ts, "source": src, "unrealized_pnl": pnl})
+    return total, rows
+
+
 def snapshot(s: Session) -> dict[str, Any]:
     now = utcnow()
     day, week = period_starts(now)
     eq = equity(s)
     open_risk = sum((position_risk(p) for p in s.execute(select(Position).where(Position.status == "OPEN")).scalars()), Decimal(0))
+    upnl, marks = open_pnl(s, now)
     return {"capital_base": str(capital_base(s)), "equity": str(eq) if eq is not None else None,
+            "unrealized_pnl": str(upnl.quantize(Decimal("0.01"))),
+            "total_equity": str((eq + upnl).quantize(Decimal("0.01"))) if eq is not None else None,
+            "unpriced_positions": sum(1 for m in marks if m["unrealized_pnl"] is None),
             "realized_total": str(realized_pnl(s)), "realized_today": str(realized_pnl(s, day)),
             "realized_week": str(realized_pnl(s, week)), "open_risk_usd": str(open_risk.quantize(Decimal("0.01"))),
             "open_risk_pct": str((open_risk / eq * 100).quantize(Decimal("0.01"))) if eq else None}

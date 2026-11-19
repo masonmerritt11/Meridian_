@@ -24,7 +24,9 @@ export default function Overview() {
     <Shell title="Executive Overview">
       <ErrorNote error={error} />
       <div className="stats">
-        <Stat label="Equity (CIO-recorded)" value={usd(pf?.equity)} sub={`base ${usd(pf?.capital_base)} · realized ${usd(pf?.realized_total)}`} />
+        <Stat label="Total equity" value={usd(pf?.total_equity ?? pf?.equity)}
+          tone={Number(pf?.unrealized_pnl ?? 0) > 0 ? "ok" : Number(pf?.unrealized_pnl ?? 0) < 0 ? "bad" : undefined}
+          sub={`${usd(pf?.equity)} closed · ${Number(pf?.unrealized_pnl ?? 0) >= 0 ? "+" : "−"}${usd(Math.abs(Number(pf?.unrealized_pnl ?? 0)))} open${pf?.unpriced_positions ? ` · ${pf.unpriced_positions} unpriced` : ""}`} />
         <Stat label="Open risk to stops" value={usd(pf?.open_risk_usd)} tone={openRisk > eq * 0.1 ? "bad" : undefined}
           sub={<><Meter value={openRisk} max={eq * 0.1} /> limit {usd(eq * 0.1)} (10%)</>} />
         <Stat label="Active recommendations" value={recs} tone={recs ? "ok" : undefined} sub={`${data?.case_counts?.BLOCKED ?? 0} blocked · ${data?.case_counts?.DEFERRED ?? 0} deferred`} />
@@ -81,10 +83,14 @@ export default function Overview() {
         <Card title="Open positions — hold or exit" span={5} right={<Link href="/risk/">Risk →</Link>}>
           <AccountSync st={data?.account_sync} />
           {!data?.open_positions?.length ? <Empty>{data?.account_sync?.configured ? "No open positions on your Coinbase account." : "No open positions recorded. Record trades you execute in the Research Laboratory or Risk Command."}</Empty> : (
-            <table><thead><tr><th>Position</th><th>Advice</th><th>Why</th></tr></thead>
+            <table><thead><tr><th>Position</th><th>Open P&L</th><th>Advice</th><th>Why</th></tr></thead>
               <tbody>{data.open_positions.map((p: any) => (
                 <tr key={p.id}>
                   <td><Badge v={p.direction} /> {p.quantity} × {p.instrument_id} {p.source === "COINBASE" && <span className="notice" title="synced from your Coinbase account">⟳</span>}<div className="notice">entry {p.entry_price} · stop {p.stop_price}</div></td>
+                  <td className="num" title={p.mark?.price ? `marked at ${p.mark.price} (${p.mark.source}, ${ago(p.mark.as_of)})` : "no recent price"}>
+                    {p.mark?.unrealized_pnl === null || p.mark?.unrealized_pnl === undefined ? "—"
+                      : <b style={{ color: Number(p.mark.unrealized_pnl) >= 0 ? "var(--ok)" : "var(--bad)" }}>{Number(p.mark.unrealized_pnl) >= 0 ? "+" : "−"}{usd(Math.abs(Number(p.mark.unrealized_pnl)))}</b>}
+                    {p.mark?.price && <div className="notice">now {Number(p.mark.price)}</div>}</td>
                   <td><Badge v={p.advisory?.action ?? "PENDING"} /></td>
                   <td><div className="codes">{(p.advisory?.reason_codes ?? []).map((c: string) => <Code key={c} c={c} />)}</div>
                     <div className="notice">{p.advisory ? ago(p.advisory.created_at) : "awaiting first evaluation"}</div></td>

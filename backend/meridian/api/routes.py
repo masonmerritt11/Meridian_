@@ -392,7 +392,12 @@ def risk_alerts(s: Session = Depends(get_db), _: Principal = Read) -> list[dict[
 # ------------------------------------------------------------------ positions & capital
 def _position_json(s: Session, p: Position) -> dict[str, Any]:
     adv = s.execute(select(PositionAdvisory).where(PositionAdvisory.position_id == p.id).order_by(desc(PositionAdvisory.id)).limit(1)).scalar()
-    return jsonable({**_row(p, "id", "case_id", "instrument_id", "direction", "quantity", "entry_price", "stop_price",
+    mark = None
+    if p.status == "OPEN":
+        px, ts, src = portfolio.mark_price(s, p.instrument_id)
+        mark = {"price": px, "as_of": ts, "source": src,
+                "unrealized_pnl": (portfolio.pnl_for(p, px) - Decimal(p.fees or 0)) if px is not None else None}
+    return jsonable({"mark": mark, **_row(p, "id", "case_id", "instrument_id", "direction", "quantity", "entry_price", "stop_price",
                             "target_price", "contract_size", "status", "opened_at", "closed_at", "exit_price",
                             "realized_pnl", "note", "source", "fees"),
                      "risk_usd": portfolio.position_risk(p),
