@@ -1168,3 +1168,84 @@ def my_account(s: Session = Depends(get_db), p: Principal = Depends(require_memb
     out["terms"] = ms.terms_view(t)
     out["fund_name"] = "MERIDIAN Fund I"
     return jsonable(out)
+
+
+# ---------------------------------------------------------------- phone notifications
+class PushKeys(BaseModel):
+    p256dh: str = Field(min_length=10, max_length=256)
+    auth: str = Field(min_length=8, max_length=64)
+
+
+class PushSubscribeBody(BaseModel):
+    endpoint: str = Field(min_length=10, max_length=2000)
+    keys: PushKeys
+
+
+class PushEndpointBody(BaseModel):
+    endpoint: str = Field(min_length=10, max_length=2000)
+
+
+def _push_endpoint_ok(url: str) -> bool:
+    from urllib.parse import urlparse
+    u = urlparse(url)
+    return u.scheme == "https" and bool(u.hostname)
+
+
+@router.get("/push/status")
+def push_status(endpoint: str | None = None, p: Principal = Read, s: Session = Depends(get_db)) -> dict[str, Any]:
+    from meridian.db.models import PushSent, PushSubscription
+    from meridian.notify import push
+    mine = s.execute(select(PushSubscription).where(PushSubscription.username == p.username)).scalars().all()
+    recent = s.execute(select(PushSent).order_by(desc(PushSent.created_at)).limit(10)).scalars().all()
+    out = {
+        "enabled": get_settings().push_enabled,
+        "public_key": push.public_key(s),
+        "devices": len(mine),
+        "this_device": bool(endpoint) and any(x.endpoint == endpoint for x in mine),
+        "sends": ["New trade recommendations", "Exit advisories on open positions"],
+        "recent": [{"title": r.title, "delivered": r.delivered, "at": r.created_at.isoformat()} for r in recent],
+    }
+    s.commit()  # persists the signing key the first time
+    return out
+
+
+@router.post("/push/subscribe")
+def push_subscribe(body: PushSubscribeBody, request: Request, p: Principal = Read, s: Session = Depends(get_db)) -> dict[str, Any]:
+    from sqlalchemy.dialects.postgresql import insert
+
+    from meridian.db.models import PushSubscription
+    if not _push_endpoint_ok(body.endpoint):
+        raise HTTPException(422, "invalid push endpoint")
+    ua = (request.headers.get("user-agent") or "")[:300]
+    s.execute(insert(PushSubscription).values(username=p.username, endpoint=body.endpoint, p256dh=body.keys.p256dh,
+                                              auth=body.keys.auth, user_agent=ua, failures=0)
+              .on_conflict_do_update(index_elements=["endpoint"],
+                                     set_={"username": p.username, "p256dh": body.keys.p256dh,
+                                           "auth": body.keys.auth, "user_agent": ua, "failures": 0}))
+    audit.record(s, p.username, "push.subscribed", "push_subscription", p.username, {"user_agent": ua[:120]})
+    s.commit()
+    return {"ok": True}
+
+
+@router.post("/push/unsubscribe")
+def push_unsubscribe(body: PushEndpointBody, p: Principal = Read, s: Session = Depends(get_db)) -> dict[str, Any]:
+    from meridian.db.models import PushSubscription
+    row = s.execute(select(PushSubscription).where(PushSubscription.endpoint == body.endpoint,
+                                                   PushSubscription.username == p.username)).scalar()
+    if row is not None:
+        s.delete(row)
+        audit.record(s, p.username, "push.unsubscribed", "push_subscription", p.username, {})
+    s.commit()
+    return {"ok": True}
+
+
+@router.post("/push/test")
+def push_test(p: Principal = Read, s: Session = Depends(get_db)) -> dict[str, Any]:
+    from meridian.notify import push
+    a = push.Alert(key="test", title="MERIDIAN alerts are on",
+                   body="You'll get new trade recommendations and exit advisories here.", url="/", tag="test", ttl=300)
+    n = push.deliver(s, a, get_settings().push_contact, usernames=[p.username])
+    s.commit()
+    if n == 0:
+        raise HTTPException(409, "no device received it — turn alerts on from this phone first")
+    return {"ok": True, "delivered": n}

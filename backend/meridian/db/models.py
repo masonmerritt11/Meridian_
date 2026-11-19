@@ -689,3 +689,35 @@ class AccountSyncState(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     permissions: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     pending: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)  # positions gone on Coinbase, awaiting fills
+
+
+# ---------------------------------------------------------------- phone notifications (Web Push)
+class PushSubscription(Base):
+    """A browser/phone that asked for alerts. Staff logins only; members never receive trade alerts."""
+    __tablename__ = "push_subscriptions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(128), index=True)
+    endpoint: Mapped[str] = mapped_column(Text, unique=True)
+    p256dh: Mapped[str] = mapped_column(String(256))
+    auth: Mapped[str] = mapped_column(String(64))
+    user_agent: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = _ts()
+    last_ok_at: Mapped[datetime | None] = _ts(nullable=True, default=False)
+    failures: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class PushSent(Base):
+    """One row per alert already sent, so the same recommendation / exit never buzzes twice."""
+    __tablename__ = "push_sent"
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)  # rec:<case_id> | exit:<advisory_id>
+    title: Mapped[str] = mapped_column(Text)
+    delivered: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = _ts()
+
+
+class AppSecret(Base):
+    """Server-generated secrets (the Web Push signing key). Never returned by the API."""
+    __tablename__ = "app_secrets"
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = _ts()

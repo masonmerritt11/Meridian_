@@ -16,6 +16,7 @@ dependencies = [
   "bcrypt>=4.1",
   "pyjwt[crypto]>=2.8",
   "cryptography>=42",
+  "pywebpush>=2.0",
 ]
 
 [project.optional-dependencies]

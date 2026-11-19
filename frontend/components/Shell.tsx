@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, ago, post, usePoll } from "@/lib/api";
+import PushToggle from "@/components/PushToggle";
 
 const NAV = [
   ["/", "Executive Overview"],
@@ -46,6 +47,7 @@ export default function Shell({ title, children }: { title: string; children: Re
           ))}
         </nav>
         <div className="nav-foot">
+          {me && <PushToggle />}
           <div className="advisory">Advisory only. MERIDIAN never places, modifies or cancels orders.</div>
           {me && (
             <div className="who">

@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     pm_backfill_days: int = Field(30, alias="PM_BACKFILL_DAYS")
     pm_max_loss_usd: float = Field(70.0, alias="PM_MAX_LOSS_USD")
 
+    # Phone notifications (Web Push via the browsers' free push services; signing key auto-generated, kept in the DB)
+    push_enabled: bool = Field(True, alias="PUSH_ENABLED")
+    push_contact: str = Field("https://www.meridiancapitalmgmt.com", alias="PUSH_CONTACT")
+
     run_workers: bool = Field(True, alias="RUN_WORKERS")
     stream_prefix: str = Field("meridian", alias="STREAM_PREFIX")
     static_dir: str = Field("", alias="STATIC_DIR")

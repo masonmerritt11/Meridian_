@@ -87,6 +87,8 @@ class Runtime:
         self._spawn("scheduler", self._scheduler_loop, False)
         self._spawn("scheduler-slow", self._scheduler_loop, True)
         self._start_prediction_desk()
+        if self.settings.push_enabled:
+            self._spawn("push", self._push_loop)
         log.info("runtime started", extra={"consumers": [s.group for s in self.subs]})
 
     def stop(self) -> None:
@@ -140,6 +142,24 @@ class Runtime:
             return
         self.pm_desk = LiveDesk(kalshi=k, btc=b, series=self.settings.pm_series, max_loss=self.settings.pm_max_loss_usd)
         self._spawn("pm-live", self._pm_loop)
+
+    def _push_loop(self) -> None:
+        """Phone notifications: new trade recommendations and EXIT advisories only (never Prediction Desk)."""
+        from meridian.notify import push
+        last_err_log = 0.0
+        while not self._stop.is_set():
+            s = self.ctx.session_factory()
+            try:
+                push.run_once(s, self.settings.push_contact)
+                s.commit()
+            except Exception as e:  # noqa: BLE001 — alerts must never take the platform down
+                s.rollback()
+                if time.time() - last_err_log > 300:
+                    log.warning("push loop failed", extra={"error": repr(e)[:300]})
+                    last_err_log = time.time()
+            finally:
+                s.close()
+            self._stop.wait(15)
 
     def _pm_loop(self) -> None:
         last_hb = last_err_log = 0.0
