@@ -43,7 +43,7 @@ export default function Portal() {
   const history = a ? [...a.ledger.map((e: any) => ({ t: e.effective_at, w: e.kind === "CONTRIBUTION" ? (e.original ? "Original investment" : "Added money") : "Withdrawal", a: e.amount })),
     ...a.fee_history.map((f: any) => ({ t: f.at, w: "Performance fee", a: -Number(f.amount) }))].sort((x, y) => (x.t < y.t ? 1 : -1)) : [];
   return (
-    <div style={{ maxWidth: 1180, margin: "0 auto", padding: "24px 20px" }}>
+    <div className="portal-wrap">
       <div className="form-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div className="brand" style={{ padding: 0 }}>
           <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" strokeWidth="1.6" /><line x1="12" y1="1.5" x2="12" y2="22.5" stroke="currentColor" strokeWidth="1.6" /></svg>
@@ -87,7 +87,7 @@ export default function Portal() {
             {a.company_equity.length > 0 && <><h4>MERIDIAN Capital Management</h4>{a.company_equity.map((g: any, i: number) => <p key={i} className="notice">You own {pct(g.pct)} (Class {g.class}{g.voting ? ", voting" : ""}) · {pct(g.vested_pct)} vested</p>)}</>}
           </Card>
           <PasswordForm forced={false} onDone={() => {}} />
-          <div style={{ gridColumn: "span 8" }}><p className="notice">Figures are MERIDIAN's internal records of the fund. Past results don't guarantee future results. Questions about your account: contact Mason.</p></div>
+          <div className="spanned" style={{ ["--span" as any]: 8 } as any}><p className="notice">Figures are MERIDIAN's internal records of the fund. Past results don't guarantee future results. Questions about your account: contact Mason.</p></div>
         </div>)}
     </div>
   );

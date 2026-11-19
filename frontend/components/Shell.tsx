@@ -23,9 +23,19 @@ export default function Shell({ title, children }: { title: string; children: Re
   const ov = usePoll<any>("/overview", 15000);
   useEffect(() => { api("/auth/me").then((m: any) => { if (m?.role === "MEMBER") location.href = "/portal/"; else setMe(m); }).catch(() => {}); }, []);
   const sim = ov.data?.simulated;
+  const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [path]);
   return (
     <div className="shell">
-      <aside className="nav">
+      <div className="mobilebar">
+        <div className="brand">
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" strokeWidth="1.6" /><line x1="12" y1="1.5" x2="12" y2="22.5" stroke="currentColor" strokeWidth="1.6" /></svg>
+          <span>MERIDIAN</span>
+        </div>
+        <button className="menu-btn" aria-label="Menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? "✕" : "☰"}</button>
+      </div>
+      <div className={open ? "nav-scrim open" : "nav-scrim"} onClick={() => setOpen(false)} />
+      <aside className={open ? "nav open" : "nav"}>
         <div className="brand">
           <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" strokeWidth="1.6" /><line x1="12" y1="1.5" x2="12" y2="22.5" stroke="currentColor" strokeWidth="1.6" /></svg>
           <span>MERIDIAN</span>

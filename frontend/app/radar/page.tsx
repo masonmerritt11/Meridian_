@@ -59,7 +59,7 @@ export default function Radar() {
                   <td><Badge v={e.impact === "High" ? "BLOCK" : e.impact === "Medium" ? "RESTRICT" : "NEUTRAL"} title={e.impact} /></td>
                   <td className="num">{e.forecast ?? "—"} / {e.previous ?? "—"}</td></tr>))}</tbody></table>)}
         </Card>
-        <div className="notice" style={{ gridColumn: "span 12" }}>Closed {"→"} <Link href="/archive/">Decision Archive</Link></div>
+        <div className="notice" style={{ gridColumn: "1 / -1" }}>Closed {"→"} <Link href="/archive/">Decision Archive</Link></div>
       </div>
     </Shell>
   );

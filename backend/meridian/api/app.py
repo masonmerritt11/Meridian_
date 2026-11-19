@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mimetypes
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -91,6 +92,7 @@ def create_app(start_runtime: bool | None = None, run_bootstrap: bool = True) ->
         return JSONResponse({"status": "ok" if ok else "degraded", "checks": checks, "version": code_version(),
                              "mode": st.market_data_mode}, status_code=200 if ok else 503)
 
+    mimetypes.add_type("application/manifest+json", ".webmanifest")
     static = Path(st.static_dir) if st.static_dir else Path(__file__).resolve().parents[3] / "frontend" / "out"
     if static.exists():
         app.mount("/_next", StaticFiles(directory=static / "_next"), name="next")
@@ -104,6 +106,8 @@ def create_app(start_runtime: bool | None = None, run_bootstrap: bool = True) ->
                 return FileResponse(static / "index.html")
             for cand in (target, target / "index.html", Path(str(target) + ".html")):
                 if cand.is_file():
+                    if cand.name == "sw.js":  # browsers must always fetch the latest worker
+                        return FileResponse(cand, media_type="text/javascript", headers={"Cache-Control": "no-cache"})
                     return FileResponse(cand)
             return FileResponse(static / "404.html" if (static / "404.html").exists() else static / "index.html")
     return app

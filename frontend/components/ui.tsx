@@ -22,7 +22,7 @@ export function Badge({ v, title }: { v?: string | null; title?: string }) {
 
 export function Card({ title, right, children, span }: { title: string; right?: ReactNode; children: ReactNode; span?: number }) {
   return (
-    <section className="card" style={span ? { gridColumn: `span ${span}` } : undefined}>
+    <section className={span ? "card spanned" : "card"} style={span ? ({ ["--span" as any]: span } as any) : undefined}>
       <header><h2>{title}</h2>{right}</header>
       <div className="card-body">{children}</div>
     </section>
