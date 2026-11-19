@@ -55,7 +55,7 @@ export default function Portal() {
         <div className="grid">
           <Card title={`${a.name} · ${a.fund_name}`} span={12} right={<span className="notice">investor since {fmtTime(a.joined)}</span>}>
             <div className="stats">
-              <Stat label="Your account" value={usd(a.value)} sub={`${pct(a.ownership_pct)} of the fund`} />
+              <Stat label="Your account" value={usd(a.value)} sub={`${pct(a.ownership_pct)} of the fund · ${signed(a.open_pnl)} in open trades`} />
               <Stat label="You put in" value={usd(a.contributed)} sub={Number(a.withdrawn) > 0 ? `${usd(a.withdrawn)} withdrawn` : "nothing withdrawn"} />
               <Stat label="Gain / loss" value={signed(a.gain)} tone={tone(a.gain)} sub={a.gain_pct === null ? "" : `${Number(a.gain_pct) >= 0 ? "+" : ""}${Number(a.gain_pct).toFixed(2)}% after fees`} />
               <Stat label="Closed trades" value={a.stats.trades} sub={`${a.stats.winning} won · ${a.stats.losing} lost`} />
@@ -65,12 +65,12 @@ export default function Portal() {
           </Card>
           <Card title="Your account over time" span={8}>
             {values.length >= 2 ? <Sparkline points={values} height={190} /> : <Empty>Your chart fills in after the first full day.</Empty>}
-            <p className="notice">End-of-day value after fees. Open trades are counted once they close.</p>
+            <p className="notice">End-of-day value after fees; today includes open trades at the latest price.</p>
           </Card>
           <Card title="How the fund works" span={4}>
             <ul className="list">
               <li>Your money is pooled with the other investors and traded by MERIDIAN.</li>
-              <li>Each closed trade's profit or loss is shared by account size at the moment it closes. You share only in results from the day you joined.</li>
+              <li>Your account includes open trades at the latest price. Profit and loss is shared by account size, and only from the moment you joined.</li>
               {a.terms && !a.fee_exempt && <li>Fees: {Number(a.terms.mgmt_fee_pct)}% a year management, plus {Number(a.terms.perf_alloc_pct)}% of profit {PERIOD[a.terms.perf_period]}{a.terms.high_water_mark ? ", only on new highs (high-water mark)" : ""}.</li>}
               {a.high_water_mark && <li>Your high-water mark: {usd(a.high_water_mark)}.</li>}
             </ul>

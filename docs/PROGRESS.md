@@ -62,3 +62,6 @@ Read-only sync of the CIO account (view-only CDP key, key_permissions check, GET
 
 ## 2026-11-18 — Member portal
 MEMBER logins (created/reset by the CIO with password re-auth; one-time password, forced change; disable takes effect immediately). All dashboard APIs are now staff-only (tested across every GET route). /portal shows a member only their own account. 114 tests.
+
+## 2026-11-19 — Open positions in equity and member shares
+Overview total equity = closed + open P&L at the latest price (book mid <=20 min, else latest close), net of fees. Members: deposits/withdrawals record open-position P&L (member_ledger.open_marks) and credit it to existing holders; at close only the change after the flow is shared. Member values (Fund I, person tabs, portal) include open P&L. Risk limits and fee crystallization still use booked amounts. 118 tests.

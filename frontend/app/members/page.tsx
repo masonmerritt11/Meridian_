@@ -40,19 +40,21 @@ function FundTab({ d, open }: { d: any; open: (id: string) => void }) {
       <Card title={`${d.fund_name} · investor capital`} span={12}
         right={<span className="notice">fund {usd(d.fund_total)} · {t ? `${Number(t.mgmt_fee_pct)}% management / ${Number(t.perf_alloc_pct)}% performance, ${PERIOD[t.perf_period]}` : "no fee terms"}</span>}>
         <Bar parts={parts} />
-        <table style={{ marginTop: 12 }}><thead><tr><th>Investor</th><th>Share of fund</th><th>Capital account</th><th>Put in</th><th>Taken out</th><th>Gain / loss</th><th>Fees paid</th><th>Joined</th></tr></thead>
+        <table style={{ marginTop: 12 }}><thead><tr><th>Investor</th><th>Share of fund</th><th>Capital account</th><th>Open P&L</th><th>Put in</th><th>Taken out</th><th>Gain / loss</th><th>Fees paid</th><th>Joined</th></tr></thead>
           <tbody>{rows.map((r) => (<tr key={r.id} onClick={() => open(r.id)} style={{ cursor: "pointer" }}>
             <td><b>{r.name}</b> {r.role === "OWNER" && <Badge v="OWNER" />} {r.fee_exempt && <span className="notice">fee-exempt</span>}</td>
-            <td className="num">{pct(r.ownership_pct)}</td><td className="num">{usd(r.value)}</td><td className="num">{usd(r.contributed)}</td>
+            <td className="num">{pct(r.ownership_pct)}</td><td className="num">{usd(r.value)}</td>
+            <td className="num" style={{ color: Number(r.open_pnl) > 0 ? "var(--ok)" : Number(r.open_pnl) < 0 ? "var(--bad)" : undefined }}>{signed(r.open_pnl)}</td>
+            <td className="num">{usd(r.contributed)}</td>
             <td className="num">{usd(r.withdrawn)}</td>
             <td className="num" style={{ color: Number(r.gain) >= 0 ? "var(--ok)" : "var(--bad)" }}>{signed(r.gain)} {r.gain_pct !== null && `(${Number(r.gain_pct).toFixed(1)}%)`}</td>
             <td className="num">{usd(Number(r.fees_paid.management) + Number(r.fees_paid.performance))}</td><td>{fmtTime(r.joined)}</td></tr>))}
             <tr><td><i>MERIDIAN Capital Management</i> <span className="notice">fees earned, kept in the fund</span></td><td className="num">{pct(d.management_company.ownership_pct)}</td>
-              <td className="num">{usd(d.management_company.value)}</td><td colSpan={5} /></tr>
+              <td className="num">{usd(d.management_company.value)}</td><td colSpan={6} /></tr>
             {d.unassigned && <tr><td><i>Unassigned capital</i></td><td className="num">{pct(d.unassigned.ownership_pct)}</td><td className="num">{usd(d.unassigned.value)}</td>
-              <td colSpan={5} className="notice">Not linked to a person yet: add someone with "from the original capital" ticked</td></tr>}
+              <td colSpan={6} className="notice">Not linked to a person yet: add someone with "from the original capital" ticked</td></tr>}
           </tbody></table>
-        <p className="notice">{d.note} Each closed trade is shared by capital account at the moment it closes, so people who join later share only in later results.</p>
+        <p className="notice">Values include open positions at the latest price. When money goes in or out, open positions are valued at that moment and their gain or loss so far stays with the people who held them, so people who join later share only in results after they join.</p>
       </Card>
     </div>
   );
@@ -180,7 +182,7 @@ function PersonTab({ id, onChange }: { id: string; onChange: () => void }) {
     <div className="grid">
       <Card title={m.name} span={12} right={<span>{m.role === "OWNER" && <Badge v="OWNER" />} joined {fmtTime(m.joined)}</span>}>
         <div className="stats">
-          <Stat label="Capital account" value={usd(m.value)} sub={`${pct(m.ownership_pct)} of the fund`} />
+          <Stat label="Capital account" value={usd(m.value)} sub={`${pct(m.ownership_pct)} of the fund · ${signed(m.open_pnl)} open`} />
           <Stat label="Put in" value={usd(m.contributed)} sub={Number(m.withdrawn) > 0 ? `${usd(m.withdrawn)} taken out` : "nothing taken out"} />
           <Stat label="Gain / loss after fees" value={signed(m.gain)} tone={tone(m.gain)} sub={m.gain_pct === null ? "" : `${Number(m.gain_pct) >= 0 ? "+" : ""}${Number(m.gain_pct).toFixed(2)}% on money put in`} />
           <Stat label="Share of closed trades" value={signed(m.realized_pnl_share)} tone={tone(m.realized_pnl_share)} sub={`${m.stats.trades} trades · ${m.stats.winning} won · ${m.stats.losing} lost`} />

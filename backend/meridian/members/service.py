@@ -14,7 +14,10 @@ management company's own account inside the fund:
     the end of each period (monthly / quarterly / annual).
 The management company's account is then shared by its owners by equity %.
 
-Equity is capital plus realized P&L of closed trades (open trades are shared when they close). The ledger columns
+Open positions are marked to market: whenever money goes in or out, the open positions' P&L at that moment is
+recorded on the ledger entry and credited to the people who held it; when the trade later closes, only the change
+after that point is shared with the new mix of owners. Displayed values also include open P&L at the latest price
+(display only: fees, risk and the high-water mark use booked amounts). The ledger columns
 `units`/`nav_per_unit` are kept for the record; balances come from capital accounts.
 """
 from __future__ import annotations
@@ -120,6 +123,22 @@ def replay(s: Session, until: datetime | None = None, daily: bool = False) -> di
     fee_log: list[dict[str, Any]] = []
     series: list[dict[str, Any]] = []
     day_end: datetime | None = None
+    positions = list(s.execute(select(Position)).scalars())
+    alloc: dict[str, Decimal] = {}                    # open P&L already credited, per contract
+    alloc_m: dict[str, dict[str, Decimal]] = {}       # ... and to whom
+
+    def share_out(amount: Decimal) -> dict[str, Decimal]:
+        hold = {k: v for k, v in f.accounts.items() if v > 0}
+        tot = sum(hold.values(), Decimal(0))
+        return {k: amount * v / tot for k, v in hold.items()} if tot > 0 else {}
+
+    def mark(marks: dict[str, Any]) -> None:
+        for inst, val in (marks or {}).items():
+            delta = Decimal(str(val)) - alloc.get(inst, Decimal(0))
+            for k, v in share_out(delta).items():
+                f.accounts[k] += v
+                alloc_m.setdefault(inst, {})[k] = alloc_m.setdefault(inst, {}).get(k, Decimal(0)) + v
+            alloc[inst] = Decimal(str(val))
 
     def accrue(t: datetime) -> None:
         tr = _terms_at(terms, t)
@@ -181,6 +200,7 @@ def replay(s: Session, until: datetime | None = None, daily: bool = False) -> di
                 f.unlinked_capital += _cap_delta(obj)
                 f.accounts[UNASSIGNED] = f.accounts.get(UNASSIGNED, Decimal(0)) + _cap_delta(obj)
         elif kind == "ledger":
+            mark(obj.open_marks or {})
             k = str(obj.member_id)
             amt = Decimal(obj.amount)
             if obj.original:
@@ -200,16 +220,42 @@ def replay(s: Session, until: datetime | None = None, daily: bool = False) -> di
             crystallize(t)
         else:
             pnl = Decimal(obj.realized_pnl or 0)
+            inst_id = obj.instrument_id
+            booked, prior = Decimal(0), {}
+            if alloc.get(inst_id):
+                remaining = sum((Decimal(q.quantity) for q in positions if q.instrument_id == inst_id and q.id != obj.id
+                                 and q.opened_at <= t and (q.closed_at is None or q.closed_at > t)), Decimal(0))
+                frac = Decimal(obj.quantity) / (Decimal(obj.quantity) + remaining) if obj.quantity else Decimal(1)
+                booked = alloc[inst_id] * frac
+                alloc[inst_id] -= booked
+                prior = {k: v * frac for k, v in alloc_m.get(inst_id, {}).items()}
+                alloc_m[inst_id] = {k: v * (1 - frac) for k, v in alloc_m.get(inst_id, {}).items()}
             hold = {k: v for k, v in f.accounts.items() if v > 0}
             tot = sum(hold.values(), Decimal(0))
-            shares = {k: pnl * v / tot for k, v in hold.items()} if tot > 0 else {}
-            for k, v in shares.items():
+            fresh = share_out(pnl - booked)
+            for k, v in fresh.items():
                 f.accounts[k] += v
-            inst = insts.get(obj.instrument_id)
-            splits.append({"closed_at": t, "asset": inst.asset if inst else obj.instrument_id, "direction": obj.direction,
+            shares = {k: prior.get(k, Decimal(0)) + fresh.get(k, Decimal(0)) for k in set(prior) | set(fresh)}
+            inst = insts.get(inst_id)
+            splits.append({"closed_at": t, "asset": inst.asset if inst else inst_id, "direction": obj.direction,
                            "pnl": pnl, "shares": shares, "fractions": {k: v / tot for k, v in hold.items()} if tot > 0 else {}})
     accrue(now)
     pending = crystallize(now, record=False)
+    # display only: open positions at the latest price, minus what was already credited at deposits/withdrawals
+    open_now: dict[str, Decimal] = {}
+    if until is None:
+        _, rows = portfolio.open_pnl(s, now)
+        by_inst: dict[str, Decimal] = {}
+        for r in rows:
+            pos = next((q for q in positions if q.id == r["position_id"]), None)
+            if pos is not None and r["unrealized_pnl"] is not None:
+                by_inst[pos.instrument_id] = by_inst.get(pos.instrument_id, Decimal(0)) + Decimal(r["unrealized_pnl"])
+        for inst, cur in by_inst.items():
+            for k, v in share_out(cur - alloc.get(inst, Decimal(0))).items():
+                open_now[k] = open_now.get(k, Decimal(0)) + v
+    open_share = {k: v for k, v in open_now.items()}
+    open_pnl_by = {k: open_share.get(k, Decimal(0)) + sum((alloc_m.get(i, {}).get(k, Decimal(0)) for i in alloc_m), Decimal(0))
+                   for k in set(open_share) | {k for per in alloc_m.values() for k in per}}
     if daily:
         if day_end is None:
             day_end = now
@@ -217,8 +263,11 @@ def replay(s: Session, until: datetime | None = None, daily: bool = False) -> di
             snap(day_end)
             day_end += timedelta(days=1)
         snap(now)
+        if series:
+            series[-1]["values"] = {k: v + open_share.get(k, Decimal(0)) for k, v in series[-1]["values"].items()}
     return {"fund": f, "splits": splits, "series": series, "pending_perf": pending, "fee_log": fee_log,
-            "members": members, "terms": _terms_at(terms, now)}
+            "members": members, "terms": _terms_at(terms, now), "open_share": open_share, "open_pnl_by": open_pnl_by,
+            "alloc": alloc}
 
 
 # ------------------------------------------------------------------ management company
@@ -321,12 +370,14 @@ def _member_row(k: str, m: Member, f: Fund, r: dict[str, Any], ledger: list[Memb
     mine = [e for e in ledger if str(e.member_id) == k]
     contributed = sum((Decimal(e.amount) for e in mine if e.kind == "CONTRIBUTION"), Decimal(0))
     withdrawn = sum((Decimal(e.amount) for e in mine if e.kind == "WITHDRAWAL"), Decimal(0))
-    value = f.accounts.get(k, Decimal(0))
-    tot = f.total()
+    booked = f.accounts.get(k, Decimal(0))
+    value = booked + r["open_share"].get(k, Decimal(0))
+    tot = f.total() + sum(r["open_share"].values(), Decimal(0))
     gain = value + withdrawn - contributed
     return {"id": k, "name": m.name, "role": m.role, "note": m.note, "active": m.active, "fee_exempt": m.fee_exempt,
             "joined": min((e.effective_at for e in mine), default=m.created_at),
             "ownership_pct": _q(value / tot * 100) if tot > 0 else "0.00", "value": _q(value),
+            "value_closed": _q(booked), "open_pnl": _q(r["open_pnl_by"].get(k, Decimal(0))),
             "contributed": _q(contributed), "withdrawn": _q(withdrawn), "gain": _q(gain),
             "gain_pct": _q(gain / contributed * 100) if contributed > 0 else None,
             "realized_pnl_share": _q(sum((sp["shares"].get(k, Decimal(0)) for sp in r["splits"]), Decimal(0))),
@@ -348,10 +399,11 @@ def overview(s: Session) -> dict[str, Any]:
     f: Fund = r["fund"]
     ledger = list(s.execute(select(MemberLedger)).scalars())
     rows = [_member_row(k, m, f, r, ledger) for k, m in sorted(r["members"].items(), key=lambda kv: kv[1].created_at)]
-    tot = f.total()
-    un = f.accounts.get(UNASSIGNED, Decimal(0))
-    gp = f.accounts.get(GP, Decimal(0))
+    tot = f.total() + sum(r["open_share"].values(), Decimal(0))
+    un = f.accounts.get(UNASSIGNED, Decimal(0)) + r["open_share"].get(UNASSIGNED, Decimal(0))
+    gp = f.accounts.get(GP, Decimal(0)) + r["open_share"].get(GP, Decimal(0))
     return {"fund_name": "MERIDIAN Fund I", "equity": _q(portfolio.equity(s) or 0), "fund_total": _q(tot),
+            "open_pnl": _q(sum(r["open_pnl_by"].values(), Decimal(0))),
             "members": rows, "trades_split": len(r["splits"]),
             "management_company": {"value": _q(gp), "ownership_pct": _q(gp / tot * 100) if tot > 0 else "0.00"},
             "unassigned": {"value": _q(un), "ownership_pct": _q(un / tot * 100) if tot > 0 else "0.00"} if abs(un) >= Q2 else None,
@@ -404,6 +456,13 @@ def record(s: Session, member_id: uuid.UUID, kind: str, amount: Decimal, origina
         raise MemberError("amount must be positive")
     r = replay(s, until=now)
     f: Fund = r["fund"]
+    marks: dict[str, str] = {}
+    if not original:
+        _, rows = portfolio.open_pnl(s, now)
+        for row in rows:
+            pos = s.get(Position, row["position_id"])
+            if pos is not None and row["unrealized_pnl"] is not None:
+                marks[pos.instrument_id] = str(Decimal(marks.get(pos.instrument_id, "0")) + Decimal(row["unrealized_pnl"]))
     if original:
         if kind != "CONTRIBUTION":
             raise MemberError("only a contribution can come from the original capital")
@@ -413,7 +472,7 @@ def record(s: Session, member_id: uuid.UUID, kind: str, amount: Decimal, origina
         t = s.execute(select(CapitalEvent.created_at).order_by(CapitalEvent.created_at).limit(1)).scalar() or now
     else:
         if kind == "WITHDRAWAL":
-            held = f.accounts.get(str(m.id), Decimal(0))
+            held = f.accounts.get(str(m.id), Decimal(0)) + _open_view(f, marks, r["alloc"]).get(str(m.id), Decimal(0))
             if amount > held + Q2:
                 raise MemberError(f"{m.name} has ${held.quantize(Q2)}; cannot withdraw ${amount}")
         s.add(CapitalEvent(kind="DEPOSIT" if kind == "CONTRIBUTION" else "WITHDRAW", amount=amount,
@@ -421,10 +480,18 @@ def record(s: Session, member_id: uuid.UUID, kind: str, amount: Decimal, origina
         t = now
     e = MemberLedger(member_id=m.id, kind=kind, amount=amount, units=amount if kind == "CONTRIBUTION" else -amount,
                      nav_per_unit=Decimal(1), equity_before=f.total(), original=original, note=note, username=username,
-                     effective_at=t, created_at=now)
+                     effective_at=t, created_at=now, open_marks=marks)
     s.add(e)
     s.flush()
     return e
+
+
+def _open_view(f: Fund, marks: dict[str, str], alloc: dict[str, Decimal]) -> dict[str, Decimal]:
+    """Each holder's share of the open P&L not yet credited, if it were credited now (used to check withdrawals)."""
+    hold = {k: v for k, v in f.accounts.items() if v > 0}
+    tot = sum(hold.values(), Decimal(0))
+    amt = sum((Decimal(v) - alloc.get(i, Decimal(0)) for i, v in marks.items()), Decimal(0))
+    return {k: amt * v / tot for k, v in hold.items()} if tot > 0 else {}
 
 
 def set_terms(s: Session, mgmt_fee_pct: Decimal, perf_alloc_pct: Decimal, hurdle_pct: Decimal, high_water_mark: bool,

@@ -582,6 +582,8 @@ class MemberLedger(Base):
     original: Mapped[bool] = mapped_column(Boolean, default=False)
     note: Mapped[str] = mapped_column(Text, default="")
     username: Mapped[str] = mapped_column(String(128))
+    # open positions' P&L (by contract, after fees) at the moment of this entry; credited to the people who held it
+    open_marks: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     effective_at: Mapped[datetime] = _ts()
     created_at: Mapped[datetime] = _ts()
 

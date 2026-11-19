@@ -144,3 +144,46 @@ def test_members_api(clean_env):
     with session_scope() as s:
         assert s.execute(select(CapitalEvent).where(CapitalEvent.note.like("member:%"))).scalars().first() is not None
         assert len(list(s.execute(select(MemberLedger)).scalars())) == 3
+
+
+def test_open_positions_marked_to_market_at_deposits(clean_env):
+    """A late investor must not get gains made before they joined, even while the trade is still open."""
+    import time
+    from meridian.db.models import BookSnapshot, Instrument
+    gol = "GOL-25NOV26-CDE"
+    with session_scope() as s:
+        _no_fees(s)
+        s.add(Instrument(id=gol, asset="GOLD", venue="coinbase", product_type="FUTURE", display_name="Gold",
+                         quote_currency="USD", contract_size=D(1), source="COINBASE", status="ACTIVE"))
+    with session_scope() as s:
+        p = Position(instrument_id=gol, direction="LONG", quantity=D(1), entry_price=D(4000), stop_price=D(3900),
+                     contract_size=D(1), status="OPEN", recorded_by="cio", opened_at=datetime.now(UTC))
+        s.add(p)
+        s.add(BookSnapshot(instrument_id=gol, ts=datetime.now(UTC), best_bid=D(4070), best_ask=D(4070), spread_bps=D(0), source="t"))
+        s.flush()
+        pid = p.id
+    with session_scope() as s:   # +$70 open: shown in everyone's value already
+        by = _by(s)
+        assert by["Member 1"]["value"] == "110.00" and by["Mason"]["value"] == "660.00" and by["Member 1"]["open_pnl"] == "10.00"
+        late = Member(name="Late")
+        s.add(late)
+        s.flush()
+        e = ms.record(s, late.id, "CONTRIBUTION", D(220), False, "joins mid-trade", "cio")
+        assert e.open_marks == {gol: "70.0000000000"} or D(e.open_marks[gol]) == D(70)
+    time.sleep(0.05)
+    with session_scope() as s:   # price moves up another $99 after Late joined
+        s.add(BookSnapshot(instrument_id=gol, ts=datetime.now(UTC), best_bid=D(4169), best_ask=D(4169), spread_bps=D(0), source="t"))
+    with session_scope() as s:
+        by = _by(s)
+        # the first $70 belongs to Mason/Member 1; the next $99 is shared by all (Late owns 220/990)
+        assert by["Late"]["value"] == "242.00" and by["Member 1"]["value"] == "121.00" and by["Mason"]["value"] == "726.00"
+    with session_scope() as s:   # close at the same price: booked results equal the open view
+        pos = s.get(Position, pid)
+        pos.status, pos.exit_price, pos.closed_at, pos.realized_pnl = "CLOSED", D(4169), datetime.now(UTC), D(169)
+    with session_scope() as s:
+        by = _by(s)
+        assert by["Late"]["value"] == "242.00" and by["Member 1"]["value"] == "121.00" and by["Mason"]["value"] == "726.00"
+        assert by["Late"]["open_pnl"] == "0.00"
+        m1 = s.execute(select(Member).where(Member.name == "Member 1")).scalar_one()
+        [t] = ms.detail(s, m1.id)["trades"]
+        assert t["share"] == "21.00"                                   # $10 before Late joined + $11 after

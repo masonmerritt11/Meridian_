@@ -1159,7 +1159,7 @@ def my_account(s: Session = Depends(get_db), p: Principal = Depends(require_memb
     from meridian.members import service as ms
     d = ms.detail(s, uuid.UUID(p.member_id))  # type: ignore[arg-type]
     t = ms.replay(s)["terms"]
-    keep = ("name", "joined", "value", "contributed", "withdrawn", "gain", "gain_pct", "ownership_pct", "realized_pnl_share",
+    keep = ("name", "joined", "value", "open_pnl", "contributed", "withdrawn", "gain", "gain_pct", "ownership_pct", "realized_pnl_share",
             "fees_paid", "fee_exempt", "performance_fee_if_period_ended_now", "high_water_mark", "series", "trades",
             "fee_history", "company_equity", "stats")
     out = {k: d[k] for k in keep}
