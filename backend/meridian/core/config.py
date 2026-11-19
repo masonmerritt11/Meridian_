@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     push_enabled: bool = Field(True, alias="PUSH_ENABLED")
     push_contact: str = Field("https://www.meridiancapitalmgmt.com", alias="PUSH_CONTACT")
 
+    # Live exit watch: order book for open positions refreshed this often; stop/target/loss-limit judged on it
+    exit_watch_seconds: float = Field(10.0, alias="EXIT_WATCH_SECONDS")
+
     run_workers: bool = Field(True, alias="RUN_WORKERS")
     stream_prefix: str = Field("meridian", alias="STREAM_PREFIX")
     static_dir: str = Field("", alias="STATIC_DIR")

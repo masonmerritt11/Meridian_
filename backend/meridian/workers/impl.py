@@ -80,7 +80,7 @@ class IngestOutput(WorkerOutput):
 class MarketIngestWorker(BaseWorker):
     spec = WorkerSpec(id="data.market_ingest", department="data_ops", name="Market Data Ingestor",
                       responsibility="Fetch, validate, normalize and store closed candles and order books.",
-                      version="1.0.0", output_model=IngestOutput, schedule_seconds=300,
+                      version="1.1.0", output_model=IngestOutput, schedule_seconds=60,
                       default_config={"history_bars": 300}, escalation_to="exec.chief_of_staff")
 
     def run(self, s: Session, rc: RunContext) -> IngestOutput:
@@ -498,41 +498,16 @@ class PositionMonitorWorker(BaseWorker):
 
     def run(self, s: Session, rc: RunContext) -> MonitorOutput:
         now = utcnow()
-        gran = self.ctx.settings.candle_granularity
-        cfg_row = risk_svc.active_config(s)
-        cfg = {**risk_svc.DEFAULT_RISK_CONFIG, **(cfg_row.config if cfg_row else {})}
-        from meridian.portfolio import service as portfolio
-        eq = portfolio.equity(s)
-        mstatus, events = risk_svc.macro_context(s, now, hours_back=1, hours_ahead=2)
+        ctx = monitor_context(s, self.ctx.settings.candle_granularity, now)
         n = exits = 0
         for pos in s.execute(select(Position).where(Position.status == "OPEN")).scalars():
-            inst = s.get(Instrument, pos.instrument_id)
-            rows = md.load_candles(s, pos.instrument_id, gran, limit=120)
-            fr = s.get(md.DataFreshness, f"candles:{pos.instrument_id}:{gran}")
-            closes = [float(r.close) for r in rows]
-            ef, es = ema(closes, 20), ema(closes, 50)
-            blackout = None
-            before = timedelta(minutes=int(cfg["event_blackout_minutes_before"]))
-            for e in relevant_events(events, inst.asset if inst else "", cfg):
-                if e["event_time"] and e["time_confidence"] == "EXACT":
-                    t = _parse(e["event_time"])
-                    if t - before <= now <= t:
-                        blackout = e["title"]
-            last = rows[-1] if rows else None
-            action, codes, detail = advise(MonitorInputs(
-                now=now, direction=pos.direction, entry=pos.entry_price, stop=pos.stop_price, target=pos.target_price,
-                quantity=pos.quantity, contract_size=pos.contract_size, equity=eq,
-                last_price=last.close if last else None, last_low=last.low if last else None, last_high=last.high if last else None,
-                data_fresh=(fr.status == "FRESH") if fr else None, ema_fast=ef[-1] if ef else None, ema_slow=es[-1] if es else None,
-                contract_expiry=inst.contract_expiry if inst else None, min_days_to_expiry=int(cfg["min_days_to_expiry"]),
-                max_loss_pct=Decimal(str(cfg["max_loss_per_trade_pct"])), blackout_event=blackout))
+            action, codes, detail = evaluate_position(s, pos, ctx, now)
             prev = s.execute(select(PositionAdvisory).where(PositionAdvisory.position_id == pos.id)
                              .order_by(PositionAdvisory.id.desc()).limit(1)).scalar()
             changed = prev is None or prev.action != action or sorted(prev.reason_codes) != sorted(codes)
             due = prev is None or now - prev.created_at > timedelta(minutes=int(rc.config["repeat_unchanged_minutes"]))
             if changed or due:
-                s.add(PositionAdvisory(position_id=pos.id, action=action, reason_codes=codes,
-                                       detail=jsonable({**detail, "as_of": last.ts.isoformat() if last else None})))
+                s.add(PositionAdvisory(position_id=pos.id, action=action, reason_codes=codes, detail=jsonable(detail)))
                 self.emit(s, "position.advisory.issued", {"position_id": pos.id, "action": action,
                                                           "reason_codes": codes, "changed": changed}, rc)
                 if changed:
@@ -542,6 +517,94 @@ class PositionMonitorWorker(BaseWorker):
             exits += action == "EXIT"
         rc.metrics.update({"evaluated": n, "exits": exits})
         return MonitorOutput(summary=f"{n} position(s), {exits} EXIT", evaluated=n, exits=exits)
+
+
+# Price-based exits are "sticky": once the live price has hit the stop / target / loss limit, the advice stays EXIT
+# (a resting stop order would already have filled) instead of flipping back to HOLD on a bounce.
+STICKY_EXIT_CODES = ("STOP_BREACHED", "TARGET_REACHED", "LOSS_LIMIT_REACHED")
+LIVE_PRICE_MAX_AGE = timedelta(seconds=90)
+
+
+def monitor_context(s: Session, gran: str, now: datetime) -> dict[str, Any]:
+    from meridian.portfolio import service as portfolio
+    cfg_row = risk_svc.active_config(s)
+    cfg = {**risk_svc.DEFAULT_RISK_CONFIG, **(cfg_row.config if cfg_row else {})}
+    _, events = risk_svc.macro_context(s, now, hours_back=1, hours_ahead=2)
+    return {"cfg": cfg, "equity": portfolio.equity(s), "events": events, "gran": gran}
+
+
+def live_exit_price(s: Session, pos: Position, now: datetime) -> tuple[Decimal, datetime, Any] | None:
+    """The price the position could be closed at right now: best bid for a long, best ask for a short."""
+    b = md.latest_book(s, pos.instrument_id)
+    if b is None or b.ts is None or now - b.ts > LIVE_PRICE_MAX_AGE:
+        return None
+    px = b.best_bid if pos.direction == "LONG" else b.best_ask
+    return (px, b.ts, b) if px is not None else None
+
+
+def evaluate_position(s: Session, pos: Position, ctx: dict[str, Any], now: datetime) -> tuple[str, list[str], dict[str, Any]]:
+    cfg, gran = ctx["cfg"], ctx["gran"]
+    inst = s.get(Instrument, pos.instrument_id)
+    rows = md.load_candles(s, pos.instrument_id, gran, limit=120)
+    fr = s.get(md.DataFreshness, f"candles:{pos.instrument_id}:{gran}")
+    closes = [float(r.close) for r in rows]
+    ef, es = ema(closes, 20), ema(closes, 50)   # trend is judged on closed hourly candles (what was backtested)
+    blackout = None
+    before = timedelta(minutes=int(cfg["event_blackout_minutes_before"]))
+    for e in relevant_events(ctx["events"], inst.asset if inst else "", cfg):
+        if e["event_time"] and e["time_confidence"] == "EXACT":
+            t = _parse(e["event_time"])
+            if t - before <= now <= t:
+                blackout = e["title"]
+    last = rows[-1] if rows else None
+    live = live_exit_price(s, pos, now)
+    if live is not None:   # stop / target / loss limit are judged on the live price (refreshed every few seconds)
+        price, as_of, book = live
+        low = min(price, last.low) if last and last.ts > pos.opened_at else price
+        high = max(price, last.high) if last and last.ts > pos.opened_at else price
+        fresh: bool | None = True
+    else:
+        price, as_of = (last.close, last.ts) if last else (None, None)
+        low, high = (last.low, last.high) if last else (None, None)
+        fresh = (fr.status == "FRESH") if fr else None
+    action, codes, detail = advise(MonitorInputs(
+        now=now, direction=pos.direction, entry=pos.entry_price, stop=pos.stop_price, target=pos.target_price,
+        quantity=pos.quantity, contract_size=pos.contract_size, equity=ctx["equity"],
+        last_price=price, last_low=low, last_high=high,
+        data_fresh=fresh, ema_fast=ef[-1] if ef else None, ema_slow=es[-1] if es else None,
+        contract_expiry=inst.contract_expiry if inst else None, min_days_to_expiry=int(cfg["min_days_to_expiry"]),
+        max_loss_pct=Decimal(str(cfg["max_loss_per_trade_pct"])), blackout_event=blackout))
+    hit = sorted({c for a in s.execute(select(PositionAdvisory.reason_codes).where(
+        PositionAdvisory.position_id == pos.id, PositionAdvisory.action == "EXIT")).scalars() for c in a
+        if c in STICKY_EXIT_CODES})
+    if hit:
+        if action != "EXIT":
+            action, codes = "EXIT", hit
+            detail = {**detail, "note": "The live price already hit this level earlier; advice stays EXIT."}
+        else:
+            codes = codes + [c for c in hit if c not in codes]
+    detail = {**detail, "as_of": as_of.isoformat() if as_of else None, "price_source": "LIVE_BOOK" if live else "HOURLY_CLOSE"}
+    return action, codes, detail
+
+
+def fast_exit_check(s: Session, ctx: dict[str, Any], now: datetime) -> list[tuple[Position, list[str]]]:
+    """Runs every few seconds after fresh order books are stored. Only escalates INTO EXIT (writes one advisory the
+    moment the stop / target / loss limit is hit); everything else is left to the once-a-minute Position Monitor."""
+    out = []
+    for pos in s.execute(select(Position).where(Position.status == "OPEN")).scalars():
+        if live_exit_price(s, pos, now) is None:
+            continue
+        action, codes, detail = evaluate_position(s, pos, ctx, now)
+        if action != "EXIT" or not any(c in STICKY_EXIT_CODES for c in codes):
+            continue
+        prev = s.execute(select(PositionAdvisory.action).where(PositionAdvisory.position_id == pos.id)
+                         .order_by(PositionAdvisory.id.desc()).limit(1)).scalar()
+        if prev == "EXIT":
+            continue
+        s.add(PositionAdvisory(position_id=pos.id, action=action, reason_codes=codes, detail=jsonable(detail)))
+        audit.record(s, "risk.exit_watch", "position.advisory", "position", pos.id, {"action": action, "reason_codes": codes})
+        out.append((pos, codes))
+    return out
 
 
 CORE_WORKERS: list[type[BaseWorker]] = [

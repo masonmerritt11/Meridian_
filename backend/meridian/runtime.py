@@ -22,6 +22,11 @@ from meridian.workers.impl import ALL_WORKERS
 from meridian.research.llm import LLMClient
 from meridian.workers.macro_provider import FairEconomyWeeklyProvider
 
+def _utcnow():  # noqa: ANN202
+    from meridian.core.util import utcnow
+    return utcnow()
+
+
 log = get_logger("meridian.runtime")
 
 
@@ -89,6 +94,8 @@ class Runtime:
         self._start_prediction_desk()
         if self.settings.push_enabled:
             self._spawn("push", self._push_loop)
+        if "market" in self.ctx.services:
+            self._spawn("exit-watch", self._exit_watch_loop)
         log.info("runtime started", extra={"consumers": [s.group for s in self.subs]})
 
     def stop(self) -> None:
@@ -159,7 +166,49 @@ class Runtime:
                     last_err_log = time.time()
             finally:
                 s.close()
-            self._stop.wait(15)
+            self._stop.wait(5)
+
+    def _exit_watch_loop(self) -> None:
+        """Every few seconds: live order book for each open position, then flag EXIT the moment the stop, target or
+        loss limit is hit. Read-only market data; MERIDIAN still never touches orders."""
+        from sqlalchemy import select
+
+        from meridian.db.models import Instrument, Position
+        from meridian.marketdata import service as md
+        from meridian.marketdata.types import ProviderUnavailable
+        from meridian.workers.impl import fast_exit_check, monitor_context
+        provider = self.ctx.services["market"]
+        last_err_log = 0.0
+        while not self._stop.is_set():
+            t0 = time.time()
+            if not is_active(self.ctx.session_factory, "risk.position_monitor"):
+                self._stop.wait(10)
+                continue
+            s = self.ctx.session_factory()
+            try:
+                ids = sorted(set(s.execute(select(Position.instrument_id).where(Position.status == "OPEN")).scalars()))
+                for iid in ids:
+                    inst = s.get(Instrument, iid)
+                    if inst is None or inst.source != provider.source:
+                        continue
+                    try:
+                        md.store_book(s, inst, provider.book(md.to_spec(inst)), _utcnow())
+                    except ProviderUnavailable:
+                        pass
+                s.commit()
+                if ids:
+                    now = _utcnow()
+                    for pos, codes in fast_exit_check(s, monitor_context(s, self.settings.candle_granularity, now), now):
+                        log.info("live exit advisory", extra={"position": str(pos.id), "reason_codes": codes})
+                    s.commit()
+            except Exception as e:  # noqa: BLE001 — keep watching; the minute monitor is the backstop
+                s.rollback()
+                if time.time() - last_err_log > 300:
+                    log.warning("exit watch failed", extra={"error": repr(e)[:300]})
+                    last_err_log = time.time()
+            finally:
+                s.close()
+            self._stop.wait(max(1.0, self.settings.exit_watch_seconds - (time.time() - t0)))
 
     def _pm_loop(self) -> None:
         last_hb = last_err_log = 0.0
