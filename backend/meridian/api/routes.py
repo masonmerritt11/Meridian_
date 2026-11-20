@@ -866,7 +866,6 @@ class MemberBody(BaseModel):
 class MemberPatch(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=120)
     note: str | None = Field(None, max_length=2000)
-    active: bool | None = None
     fee_exempt: bool | None = None
 
 
@@ -946,6 +945,37 @@ def member_update(member_id: uuid.UUID, body: MemberPatch, s: Session = Depends(
     for k, v in changes.items():
         setattr(m, k, v.strip() if isinstance(v, str) and k == "name" else v)
     audit.record(s, f"cio:{p.username}", "member.update", "member", m.id, jsonable({"before": before, "after": changes}))
+    s.commit()
+    return {"ok": True}
+
+
+class PasswordBody(BaseModel):
+    password: str = Field(min_length=1, max_length=256)
+
+
+@router.post("/members/{member_id}/remove")
+def member_remove(member_id: uuid.UUID, body: PasswordBody, s: Session = Depends(get_db), p: Principal = Cio) -> dict[str, Any]:
+    """Delete (never funded) or archive (paid out to $0; history kept). Requires the CIO password."""
+    from meridian.members import service as ms
+    _reauth(s, p, body.password, "member.remove")
+    try:
+        out = ms.remove(s, member_id, p.username)
+    except ms.MemberError as e:
+        raise HTTPException(409 if "not found" not in str(e) else 404, str(e)) from e
+    audit.record(s, f"cio:{p.username}", f"member.{out['mode'].lower()}", "member", member_id, out)
+    s.commit()
+    return out
+
+
+@router.post("/members/{member_id}/restore")
+def member_restore(member_id: uuid.UUID, s: Session = Depends(get_db), p: Principal = Cio) -> dict[str, Any]:
+    """Bring an archived member back (their login stays disabled until you re-enable it)."""
+    from meridian.members import service as ms
+    try:
+        m = ms.restore(s, member_id)
+    except ms.MemberError as e:
+        raise HTTPException(404, str(e)) from e
+    audit.record(s, f"cio:{p.username}", "member.restore", "member", member_id, {"name": m.name})
     s.commit()
     return {"ok": True}
 

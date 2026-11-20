@@ -187,3 +187,42 @@ def test_open_positions_marked_to_market_at_deposits(clean_env):
         m1 = s.execute(select(Member).where(Member.name == "Member 1")).scalar_one()
         [t] = ms.detail(s, m1.id)["trades"]
         assert t["share"] == "21.00"                                   # $10 before Late joined + $11 after
+
+
+def test_remove_members(clean_env):
+    c = client()
+    login(c)
+    pw = {"password": "test-password-123"}
+    names = {m["name"]: m for m in c.get("/api/members").json()["members"]}
+    # founder can't be removed; wrong password changes nothing
+    assert c.post(f"/api/members/{names['Mason']['id']}/remove", json=pw).status_code == 409
+    oops = c.post("/api/members", json={"name": "Typo Name"}).json()["id"]
+    assert c.post(f"/api/members/{oops}/remove", json={"password": "nope"}).status_code == 403
+    # never funded -> deleted completely, login too
+    assert c.post(f"/api/members/{oops}/login", json={"username": "typo", **pw}).status_code == 200
+    r = c.post(f"/api/members/{oops}/remove", json=pw)
+    assert r.status_code == 200 and r.json()["mode"] == "DELETED"
+    assert c.get(f"/api/members/{oops}").status_code == 404
+    with session_scope() as s:
+        from meridian.db.models import User
+        assert s.execute(select(User).where(User.username == "typo")).scalar() is None
+    # funded -> must be paid out first, then archived with history kept
+    mid = names["Member 1"]["id"]
+    assert c.post(f"/api/members/{mid}/login", json={"username": "member.one", **pw}).status_code == 200
+    blocked = c.post(f"/api/members/{mid}/remove", json=pw)
+    assert blocked.status_code == 409 and "$100.00" in blocked.json()["detail"]
+    assert c.post(f"/api/members/{mid}/ledger", json={"kind": "WITHDRAWAL", "amount": "100", "note": "paid out"}).status_code == 200
+    r = c.post(f"/api/members/{mid}/remove", json=pw)
+    assert r.status_code == 200 and r.json()["mode"] == "ARCHIVED"
+    row = next(m for m in c.get("/api/members").json()["members"] if m["id"] == mid)
+    assert row["active"] is False and row["withdrawn"] == "100.00"
+    assert c.get(f"/api/members/{mid}/login").json()["disabled"] is True
+    assert c.post(f"/api/members/{mid}/ledger", json={"kind": "CONTRIBUTION", "amount": "5"}).status_code == 400
+    with session_scope() as s:
+        assert len(list(s.execute(select(MemberLedger).where(MemberLedger.member_id == mid)).scalars())) == 2
+    assert c.post(f"/api/members/{mid}/restore").status_code == 200
+    assert next(m for m in c.get("/api/members").json()["members"] if m["id"] == mid)["active"] is True
+    # someone holding company equity must have the grant ended first
+    eq = c.post("/api/members", json={"name": "Partner"}).json()["id"]
+    assert c.post("/api/members/company/grants", json={"member_id": eq, "equity_class": "B", "pct": "2", **pw}).status_code == 200
+    assert "equity" in c.post(f"/api/members/{eq}/remove", json=pw).json()["detail"]

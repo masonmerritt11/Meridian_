@@ -28,7 +28,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from meridian.core.util import utcnow
@@ -452,6 +452,8 @@ def record(s: Session, member_id: uuid.UUID, kind: str, amount: Decimal, origina
     m = s.get(Member, member_id)
     if m is None:
         raise MemberError("member not found")
+    if not m.active and kind == "CONTRIBUTION":
+        raise MemberError(f"{m.name} has been removed; restore them before adding money")
     if amount <= 0:
         raise MemberError("amount must be positive")
     r = replay(s, until=now)
@@ -525,3 +527,48 @@ def seed_founders(s: Session) -> bool:
     record(s, m1.id, "CONTRIBUTION", Decimal(100), True, "Share of the original $700 (1/7)", "system")
     s.add(MgmtEquityGrant(member_id=mason.id, equity_class="A", pct=Decimal(100), voting=True, note="Founder", username="system"))
     return True
+
+
+def remove(s: Session, member_id: uuid.UUID, username: str) -> dict[str, Any]:
+    """Remove a member.
+    * Never had money in and never held company equity -> deleted completely (login too).
+    * Has history -> must be paid out to $0.00 first (incl. open P&L); then archived: hidden, login disabled,
+      ledger kept (it is append-only and every past trade split depends on it)."""
+    from meridian.db.models import User
+
+    m = s.get(Member, member_id)
+    if m is None:
+        raise MemberError("member not found")
+    if m.role == "OWNER":
+        raise MemberError("the founder/owner account can't be removed")
+    if any(g.member_id == m.id for g in active_grants(s)):
+        raise MemberError(f"{m.name} still holds management-company equity; end that grant first")
+    n_ledger = s.scalar(select(func.count()).select_from(MemberLedger).where(MemberLedger.member_id == m.id)) or 0
+    n_grants = s.scalar(select(func.count()).select_from(MgmtEquityGrant).where(MgmtEquityGrant.member_id == m.id)) or 0
+    logins = list(s.execute(select(User).where(User.member_id == m.id)).scalars())
+    if n_ledger == 0 and n_grants == 0:
+        for u in logins:
+            s.delete(u)
+        s.flush()
+        s.delete(m)
+        s.flush()
+        return {"mode": "DELETED", "name": m.name}
+    row = next((x for x in overview(s)["members"] if x["id"] == str(m.id)), None)
+    value = Decimal(row["value"]) if row else Decimal(0)
+    if abs(value) >= Q2:
+        raise MemberError(f"{m.name} still has {'$' if value > 0 else '-$'}{abs(value):,.2f} in the fund. Record a "
+                          "withdrawal for that amount (paying them out) first, then remove them.")
+    m.active = False
+    for u in logins:
+        u.disabled = True
+    s.flush()
+    return {"mode": "ARCHIVED", "name": m.name}
+
+
+def restore(s: Session, member_id: uuid.UUID) -> Member:
+    m = s.get(Member, member_id)
+    if m is None:
+        raise MemberError("member not found")
+    m.active = True
+    s.flush()
+    return m

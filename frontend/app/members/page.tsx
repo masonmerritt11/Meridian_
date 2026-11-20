@@ -30,7 +30,7 @@ function Pw({ value, onChange }: { value: string; onChange: (v: string) => void 
 }
 
 function FundTab({ d, open }: { d: any; open: (id: string) => void }) {
-  const rows: any[] = d.members;
+  const rows: any[] = d.members.filter((r: any) => r.active !== false);
   const parts = [...rows.map((r, i) => ({ name: r.name, pct: Number(r.ownership_pct), c: COLORS[i % COLORS.length] })),
     { name: "Management company (fees)", pct: Number(d.management_company.ownership_pct), c: "#8a8f98" },
     ...(d.unassigned ? [{ name: "Unassigned", pct: Number(d.unassigned.ownership_pct), c: "#444" }] : [])];
@@ -180,7 +180,7 @@ function PersonTab({ id, onChange }: { id: string; onChange: () => void }) {
     ...m.fee_history.map((f: any) => ({ t: f.at, w: "Performance fee", a: -Number(f.amount), n: "" }))].sort((a, b) => (a.t < b.t ? 1 : -1));
   return (
     <div className="grid">
-      <Card title={m.name} span={12} right={<span>{m.role === "OWNER" && <Badge v="OWNER" />} joined {fmtTime(m.joined)}</span>}>
+      <Card title={m.name} span={12} right={<span>{m.role === "OWNER" && <Badge v="OWNER" />}{m.active === false && <Badge v="REMOVED" />} joined {fmtTime(m.joined)}</span>}>
         <div className="stats">
           <Stat label="Capital account" value={usd(m.value)} sub={`${pct(m.ownership_pct)} of the fund · ${signed(m.open_pnl)} open`} />
           <Stat label="Put in" value={usd(m.contributed)} sub={Number(m.withdrawn) > 0 ? `${usd(m.withdrawn)} taken out` : "nothing taken out"} />
@@ -216,6 +216,7 @@ function PersonTab({ id, onChange }: { id: string; onChange: () => void }) {
         </label>
       </Card>
       <PortalLogin id={id} name={m.name} />
+      <RemoveMember m={m} id={id} onDone={() => { reload(); onChange(); }} />
       <Card title="Management company equity" span={4}>
         {!m.company_equity.length ? <Empty>No equity in MERIDIAN Capital Management.</Empty> :
           m.company_equity.map((g: any) => <div key={g.id} className="note"><b>{pct(g.pct)}</b> {CLASS[g.class]} · {pct(g.vested_pct)} vested · {usd(g.share_of_company_value)}</div>)}
@@ -232,6 +233,52 @@ function PersonTab({ id, onChange }: { id: string; onChange: () => void }) {
               <td className="num" style={{ color: Number(t.share) >= 0 ? "var(--ok)" : "var(--bad)" }}>{signed(t.share)}</td></tr>))}</tbody></table>)}
       </Card>
     </div>
+  );
+}
+
+function RemoveMember({ m, id, onDone }: { m: any; id: string; onDone: () => void }) {
+  const [pw, setPw] = useState(""), [err, setErr] = useState<string | null>(null), [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  if (m.role === "OWNER") return null;
+  const value = Number(m.value);
+  const funded = Number(m.contributed) > 0 || (m.ledger ?? []).length > 0 || (m.company_equity ?? []).length > 0;
+  const go = async () => {
+    const msg = !funded ? `Delete ${m.name} completely? They never had money in, so nothing else changes.`
+      : Math.abs(value) >= 0.01 ? `Pay ${m.name} out ${usd(value)} (recorded as a withdrawal, which lowers account equity) and remove them? Their history is kept.`
+      : `Remove ${m.name}? Their history is kept and their login is turned off.`;
+    if (!window.confirm(msg)) return;
+    setBusy(true); setErr(null);
+    try {
+      if (funded && value >= 0.01) await post(`/members/${id}/ledger`, { kind: "WITHDRAWAL", amount: value.toFixed(2), note: "paid out on removal" });
+      const r = await post<any>(`/members/${id}/remove`, { password: pw });
+      setPw(""); setDone(r.mode === "DELETED" ? `${m.name} was deleted.` : `${m.name} was removed. Their history stays under "Removed".`);
+      onDone();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const restore = async () => {
+    try { await post(`/members/${id}/restore`, {}); onDone(); } catch (e: any) { setErr(e.message); }
+  };
+  if (m.active === false) return (
+    <Card title="Removed" span={4}>
+      <p className="notice">{m.name} was removed. Their history is kept for the records; their login is off.</p>
+      <button onClick={restore}>Restore {m.name}</button>
+      <ErrorNote error={err} />
+    </Card>
+  );
+  return (
+    <Card title="Remove person" span={4}>
+      {done ? <p className="note">{done}</p> : <>
+        <p className="notice">{!funded ? "They never had money in, so they'll be deleted completely."
+          : Math.abs(value) >= 0.01 ? `They'll be paid out ${usd(value)} first (a withdrawal, lowering account equity), then removed. Their history is kept and their login is turned off.`
+          : "Their balance is $0. They'll be removed; history is kept and their login is turned off."}</p>
+        {value < -0.01 && <p className="notice">Their balance is negative; settle it before removing them.</p>}
+        <div className="form-row">
+          <Pw value={pw} onChange={setPw} />
+          <button className="danger" disabled={!pw || busy || value < -0.01} onClick={go}>{!funded ? "Delete" : Math.abs(value) >= 0.01 ? "Pay out & remove" : "Remove"}</button>
+        </div>
+        <ErrorNote error={err} />
+      </>}
+    </Card>
   );
 }
 
@@ -299,7 +346,8 @@ export default function Members() {
   const ov = usePoll<any>("/members", 30000);
   const [tab, setTab] = useState<string>("fund");
   const d = ov.data;
-  const rows: any[] = d?.members ?? [];
+  const all: any[] = d?.members ?? [];
+  const rows = all.filter((r) => r.active !== false), removed = all.filter((r) => r.active === false);
   const T = (id: string, label: string) => <button key={id} className={tab === id ? "primary" : ""} onClick={() => setTab(id)}>{label}</button>;
   return (
     <Shell title="Members">
@@ -308,12 +356,17 @@ export default function Members() {
         {T("fund", "Fund I")}{T("company", "Management company")}{T("terms", "Fund terms")}
         <span className="notice" style={{ margin: "0 4px" }}>|</span>
         {rows.map((r) => T(r.id, r.name))}{T("add", "+ Add person")}
+        {removed.length > 0 && <select value={removed.some((r) => r.id === tab) ? tab : ""} onChange={(e) => e.target.value && setTab(e.target.value)} aria-label="Removed members">
+          <option value="">Removed ({removed.length})</option>
+          {removed.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>}
       </div>
       {!d ? null : tab === "fund" ? <FundTab d={d} open={setTab} />
         : tab === "company" ? <CompanyTab d={d} reload={ov.reload} />
         : tab === "terms" ? <TermsTab key={d.terms?.id} d={d} reload={ov.reload} />
         : tab === "add" ? <AddPerson onDone={(id) => { ov.reload(); setTab(id); }} />
-        : <PersonTab key={tab} id={tab} onChange={ov.reload} />}
+        : all.some((r) => r.id === tab) ? <PersonTab key={tab} id={tab} onChange={ov.reload} />
+        : <Empty>That person was deleted.</Empty>}
       <p className="notice" style={{ marginTop: 16 }}>Record-keeping only. Before taking outside money, have a securities/commodities attorney set up the actual entities and offering documents; performance fees in particular are limited to qualified investors.</p>
     </Shell>
   );

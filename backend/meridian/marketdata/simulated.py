@@ -53,6 +53,10 @@ def _q(x: float, tick: Decimal) -> Decimal:
     return (Decimal(str(x)) / tick).quantize(Decimal(1), rounding=ROUND_HALF_EVEN) * tick
 
 
+# Background-path hour the scripted demo ends on (a stretch where the demo's setups fit the default risk limits).
+DEMO_BASE_H = 7750
+
+
 class SimulatedProvider:
     source = "SIMULATED"
 
@@ -77,7 +81,9 @@ class SimulatedProvider:
         return out
 
     def _close_at(self, asset: str, h: int, last_h: int) -> float:
-        base = _close(asset, h)
+        # The scripted demo always sits on the same stretch of background path (relative to its end), so its outcome
+        # doesn't drift with the calendar date. Plain simulated mode keeps the absolute, wall-clock path.
+        base = _close(asset, h - last_h + DEMO_BASE_H if self.scenario == "demo" else h)
         if self.scenario == "demo" and asset in DEMO_OVERLAYS:
             span = 80
             k = min(h, last_h) - (last_h - span)
